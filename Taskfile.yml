@@ -1,0 +1,75 @@
+version: 3
+
+tasks:
+  build:
+    desc: Build all packages
+    cmds:
+      - go build ./...
+
+  test:
+    desc: Run tests
+    cmds:
+      - go test ./...
+
+  test-race:
+    desc: Run tests with the race detector, shuffled
+    cmds:
+      - CGO_ENABLED=1 go test -race -shuffle=on ./...
+
+  corpus:
+    desc: Run tests against pawn-corpus
+    cmds:
+      - PAWN_CORPUS_DIR="${PAWN_CORPUS_DIR:-../pawn-corpus}" go test -count=1 ./...
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  fmt:
+    desc: Format code
+    cmds:
+      - golangci-lint fmt ./...
+
+  fmt-check:
+    desc: Fail if any file is not formatted
+    cmds:
+      - test -z "$(gofmt -l .)"
+
+  lint:
+    desc: Run golangci-lint
+    cmds:
+      - golangci-lint run ./...
+
+  lint-fix:
+    desc: Run golangci-lint and apply safe fixes
+    cmds:
+      - golangci-lint run --fix ./...
+
+  tidy:
+    desc: Tidy go.mod and go.sum
+    cmds:
+      - go mod tidy
+
+  bench:
+    desc: Run benchmarks with allocation reporting
+    cmds:
+      - go test ./... -run=^$ -bench=. -benchmem
+
+  fuzz-preprocess:
+    desc: Fuzz the preprocessor for 30s
+    cmds:
+      - go test ./preprocess -run=^$ -fuzz=FuzzRun -fuzztime=30s
+
+  fuzz-symbol:
+    desc: Fuzz the symbol builder for 30s
+    cmds:
+      - go test ./symbol -run=^$ -fuzz=FuzzBuild -fuzztime=30s
+
+  check:
+    desc: Run the local CI checks
+    cmds:
+      - task: fmt-check
+      - task: vet
+      - task: lint
+      - task: test-race

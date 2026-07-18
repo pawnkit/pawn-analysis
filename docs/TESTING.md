@@ -1,0 +1,17 @@
+# Testing
+
+Run the offline suite and race detector before changing analysis state or caches:
+
+```sh
+go test ./...
+CGO_ENABLED=1 go test -race ./...
+go vet ./...
+```
+
+The suite uses a sibling `pawn-corpus` checkout when present. Set
+`PAWN_CORPUS_DIR` when it lives elsewhere. Shared cases stay in the corpus;
+small package-level regressions stay here.
+
+Bug fixes need a small regression case. Preprocessor changes should cover malformed input, nesting limits, and source provenance. Cache changes should test cancellation, revisions, and concurrent reads.
+
+Golden files never update themselves in CI. External fixtures must record their origin, licence, and pinned version or commit.

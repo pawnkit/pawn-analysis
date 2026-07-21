@@ -1,4 +1,4 @@
-github.com/pawnkit/pawn-parser v1.0.1-0.20260718155913-7441df7a8611 h1:Z71MW6BTlPXuj2RJNjvlDC984u0Kme0tmWuuNyPz3WI=
-github.com/pawnkit/pawn-parser v1.0.1-0.20260718155913-7441df7a8611/go.mod h1:NxVFywG2/diopWaow+Fj7cNtb7NxTxFswaV8MrXSCBg=
+github.com/pawnkit/pawn-parser v1.1.1 h1:nOUCyqlmL7wAoc6HiYQxXnnuDbK4s6LhoU9P9F51VTU=
+github.com/pawnkit/pawn-parser v1.1.1/go.mod h1:6iG1RfoTtroAadrF5A60QZc/zwalxBwn2gbgCQ/QO8Y=
 github.com/pawnkit/pawnkit-core v0.1.0 h1:clhoN/nr+JyNMAcFTlubStPd3q4VeCNf44MJgYmFaDM=
 github.com/pawnkit/pawnkit-core v0.1.0/go.mod h1:jGhXHEEzr8juezaRhh/AkGzX6S4eGQnprB83vrI1peU=

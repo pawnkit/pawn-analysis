@@ -33,6 +33,13 @@ func TestAnalyzePipeline(t *testing.T) {
 	}
 }
 
+func TestAnalyzeAtCallbackWithConstArrays(t *testing.T) {
+	result := analysis.Analyze([]byte("forward @receivestring(const message[], const source[]);\n"), analysis.Options{})
+	if result.Parse.HasParseErrors() || len(result.Diagnostics) != 0 {
+		t.Fatalf("unexpected diagnostics: %+v", result.Diagnostics)
+	}
+}
+
 func TestAnalyzeKeepsOriginalSymbolOffsets(t *testing.T) {
 	text := []byte("stock Helper() {}\nmain() { return Helper(); }")
 	result := analysis.Analyze(text, analysis.Options{})

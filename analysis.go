@@ -81,6 +81,7 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		return nil, err
 	}
 	table := symbol.Build(parsed.Syntax(), fileID)
+	table.Diagnostics = removeMacroDeclarationDiagnostics(table.Diagnostics, pre)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -120,6 +121,28 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		Symbols: table, ExpandedSymbols: expandedTable,
 		Semantics: semantics, ControlFlow: flows, Diagnostics: diagnostics,
 	}, nil
+}
+
+func removeMacroDeclarationDiagnostics(items []diagnostic.Diagnostic, pre *preprocess.Result) []diagnostic.Diagnostic {
+	result := items[:0]
+	for _, item := range items {
+		if item.Code != "pawn-analysis:symbol/redeclared" || !insideMacroInvocation(item.Primary, pre) {
+			result = append(result, item)
+		}
+	}
+	return result
+}
+
+func insideMacroInvocation(span source.Span, pre *preprocess.Result) bool {
+	for _, item := range pre.ExpandedTokens {
+		for origin := item.Origin; origin != nil; origin = origin.Parent {
+			candidate := origin.Span
+			if origin.Macro != "" && candidate.File == 0 && int(span.Start) >= candidate.Start.Offset && int(span.End) <= candidate.End.Offset {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 type nameResolver struct {

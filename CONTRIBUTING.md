@@ -16,4 +16,4 @@ CGO_ENABLED=1 go test -race ./...
 
 Keep preprocessing, source mapping, and semantic facts here. User-facing lint
 policy belongs in `pawnlint`; editor protocol behavior belongs in
-`pawn-language-server`.
+`pawnlsp`.

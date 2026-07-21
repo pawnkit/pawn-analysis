@@ -126,6 +126,16 @@ func TestAnalyzeMapsMacroSymbolToInvocation(t *testing.T) {
 	t.Fatal("expanded macro symbol missing")
 }
 
+func TestAnalyzeDoesNotRedeclareFunctionMacroInvocations(t *testing.T) {
+	source := []byte("#define TEST(%0) forward test_%0(); public test_%0()\nTEST(one) {}\nTEST(two) {}\n")
+	result := analysis.Analyze(source, analysis.Options{RetainExpanded: true})
+	for _, item := range result.Diagnostics {
+		if item.Code == "pawn-analysis:symbol/redeclared" {
+			t.Fatalf("macro invocation reported as a redeclaration: %+v", item)
+		}
+	}
+}
+
 func BenchmarkAnalyze(b *testing.B) {
 	text := []byte("#define SCALE(%0) ((%0) * 2)\nstock Helper(value) { return SCALE(value); }\nmain() { return Helper(21); }\n")
 	b.ReportAllocs()

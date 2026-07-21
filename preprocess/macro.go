@@ -17,15 +17,12 @@ func (k MacroKind) String() string {
 	return "object-like"
 }
 
-// Macro is one #define'd macro, as currently known to the preprocessor.
-// Pawn's macro parameters are positional (%0, %1, ... in the body), not
-// C-style named substitution, though a parameter list may still name its
-// slots for documentation; NamedParams records that mapping when present so
-// a body identifier matching a declared name also substitutes.
+// Macro is one active #define.
 type Macro struct {
 	Name        string
 	Kind        MacroKind
 	ParamCount  int
+	ParamSlots  map[int]int
 	NamedParams map[string]int
 	Body        []ptok
 	File        uint32
@@ -72,9 +69,7 @@ func (t *macroTable) snapshot() map[string]Macro {
 	return out
 }
 
-// parseParamIndex parses a MacroParam token's text ("%0".."%9", or "%%")
-// into a positional argument index. ok is false for "%%", which denotes a
-// literal '%' rather than a parameter reference.
+// parseParamIndex parses a positional label such as "%0".
 func parseParamIndex(text string) (index int, ok bool) {
 	if text == "%%" {
 		return 0, false

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.5 - 2026-07-21
+
+### Fixed
+
+- Bound sparse macro parameter labels in declaration order.
+
 ## 0.1.4 - 2026-07-21
 
 ### Fixed

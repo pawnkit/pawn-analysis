@@ -111,6 +111,7 @@ func (e *engine) handleDefine(f *frame, hash token.Token) {
 	if f.cur().Kind == token.LParen && nameTok.End.Offset == f.cur().Start.Offset {
 		lparen := f.advance()
 		m.Kind = MacroFunctionLike
+		m.ParamSlots = make(map[int]int)
 		m.NamedParams = make(map[string]int)
 		idx := 0
 		for !f.atEnd() {
@@ -122,11 +123,10 @@ func (e *engine) handleDefine(f *frame, hash token.Token) {
 			switch pt.Kind {
 			case token.MacroParam:
 				f.advance()
-				if n, ok := parseParamIndex(pt.Text(f.source)); ok && n >= idx {
-					idx = n + 1
-				} else {
-					idx++
+				if n, ok := parseParamIndex(pt.Text(f.source)); ok {
+					m.ParamSlots[n] = idx
 				}
+				idx++
 			case token.Identifier:
 				f.advance()
 				m.NamedParams[pt.Text(f.source)] = idx
@@ -165,11 +165,21 @@ func (e *engine) handleDefine(f *frame, hash token.Token) {
 }
 
 func macroEqual(a, b Macro) bool {
-	if a.Kind != b.Kind || len(a.Body) != len(b.Body) {
+	if a.Kind != b.Kind || a.ParamCount != b.ParamCount || len(a.ParamSlots) != len(b.ParamSlots) || len(a.NamedParams) != len(b.NamedParams) || len(a.Body) != len(b.Body) {
 		return false
 	}
+	for label, slot := range a.ParamSlots {
+		if other, ok := b.ParamSlots[label]; !ok || other != slot {
+			return false
+		}
+	}
+	for name, slot := range a.NamedParams {
+		if other, ok := b.NamedParams[name]; !ok || other != slot {
+			return false
+		}
+	}
 	for i := range a.Body {
-		if a.Body[i].Kind != b.Body[i].Kind {
+		if a.Body[i].Kind != b.Body[i].Kind || a.Body[i].text != b.Body[i].text {
 			return false
 		}
 	}

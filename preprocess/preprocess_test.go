@@ -64,6 +64,20 @@ func TestMultiArgFunctionMacro(t *testing.T) {
 	}
 }
 
+func TestMacroParameterLabelsUseDeclarationOrder(t *testing.T) {
+	src := "#define PICK(%1) (%1)\n" +
+		"#define PAIR(%0,%2) ((%0) + (%2))\n" +
+		"new value = PICK(3) + PAIR(4, 5);\n"
+	r := preprocess.Run([]byte(src), preprocess.Options{})
+	if len(r.Diagnostics) != 0 {
+		t.Fatalf("unexpected diagnostics: %v", r.Diagnostics)
+	}
+	got := expandedText(t, r)
+	if !strings.Contains(got, "( 3 )") || !strings.Contains(got, "( ( 4 ) + ( 5 ) )") {
+		t.Fatalf("expected declaration-order substitution, got %q", got)
+	}
+}
+
 func TestNamedParamMacro(t *testing.T) {
 	src := "#define ADD(a,b) ((a) + (b))\nnew x = ADD(1, 2);\n"
 	r := preprocess.Run([]byte(src), preprocess.Options{})

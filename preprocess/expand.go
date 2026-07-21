@@ -167,8 +167,9 @@ func substituteParams(m Macro, args [][]ptok, inv token.Span) []ptok {
 	for _, bt := range m.Body {
 		if bt.Kind == token.MacroParam {
 			if idx, isParam := parseParamIndex(bt.text); isParam {
-				if idx < len(args) {
-					for _, at := range args[idx] {
+				slot, declared := m.ParamSlots[idx]
+				if declared && slot < len(args) {
+					for _, at := range args[slot] {
 						out = append(out, wrapOrigin(at, inv, m.Name))
 					}
 				}

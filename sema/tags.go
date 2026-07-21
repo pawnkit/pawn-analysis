@@ -129,6 +129,9 @@ func tagsCompatible(expected, actual string) bool {
 	}
 	accepted := make(map[string]struct{})
 	for _, tag := range strings.Split(expected, "|") {
+		if tag == "_" {
+			return true
+		}
 		accepted[tag] = struct{}{}
 	}
 	for _, tag := range strings.Split(actual, "|") {

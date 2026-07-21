@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.6 - 2026-07-21
+
+### Fixed
+
+- Expanded tag macros before checking calls across workspace files.
+
 ## 0.1.5 - 2026-07-21
 
 ### Fixed

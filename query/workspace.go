@@ -55,11 +55,17 @@ func (s *Snapshot) AnalyzeDocuments(ctx context.Context, uris []source.URI, opts
 
 	resolver := newWorkspaceResolver(opts.Names)
 	for _, uri := range uris {
-		result, err := s.Analyze(ctx, uri, opts)
+		indexOpts := opts
+		indexOpts.RetainExpanded = true
+		result, err := s.Analyze(ctx, uri, indexOpts)
 		if err != nil {
 			return nil, err
 		}
-		resolver.add(result.Symbols)
+		table := result.ExpandedSymbols
+		if table == nil {
+			table = result.Symbols
+		}
+		resolver.add(table)
 	}
 
 	workspace := &WorkspaceResult{Files: make(map[source.URI]*analysis.Result, len(uris))}

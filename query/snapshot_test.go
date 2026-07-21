@@ -125,6 +125,24 @@ func TestAnalyzeWorkspaceChecksSharedCallableArity(t *testing.T) {
 	}
 }
 
+func TestAnalyzeWorkspaceExpandsCallableTagMacros(t *testing.T) {
+	mainURI := source.FileURI("main.pwn")
+	snapshot := New(
+		Document{URI: mainURI, Text: []byte("main() { Accept(String:1); UseHandle(Handle:1); }"), Version: 1},
+		Document{URI: source.FileURI("helper.inc"), Text: []byte("#define AnyTag {_, bool, Float}\n#define HandleTag {Handle}\nnative Accept(AnyTag:value);\nnative UseHandle(HandleTag:value);"), Version: 1},
+	)
+
+	result, err := snapshot.AnalyzeWorkspace(context.Background(), analysis.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range result.Files[mainURI].Diagnostics {
+		if item.Code == "pawn-analysis:sema/tag-mismatch" {
+			t.Fatalf("expanded tag macro rejected a valid argument: %+v", item)
+		}
+	}
+}
+
 func TestAnalyzeDocumentsExcludesUnselectedDeclarations(t *testing.T) {
 	mainURI := source.FileURI("main.pwn")
 	helperURI := source.FileURI("helper.inc")

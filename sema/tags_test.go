@@ -24,6 +24,7 @@ func TestTagMismatchChecks(t *testing.T) {
 		{"tag union float", "Accept({Float, bool}:value) {} main() { Accept(1.0); }", 0},
 		{"tag union bool", "Accept({Float, bool}:value) {} main() { Accept(bool:true); }", 0},
 		{"tag union mismatch", "Accept({Float, bool}:value) {} main() { Accept(String:1); }", 1},
+		{"weak tag union", "Accept({Float, _}:value) {} main() { Accept(String:1); }", 0},
 		{"weak expected tag", "Accept(_:value) {} main() { Accept(Float:1); }", 0},
 		{"binary operator overload", "Float:operator+(bool:left, Float:right) { return right; } Float:Get() { return bool:true + 1.0; }", 0},
 		{"operator overload mismatch", "Float:operator+(bool:left, Float:right) { return right; } main() { new bool:left; new String:right; return left + right; }", 1},

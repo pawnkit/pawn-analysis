@@ -45,7 +45,12 @@ func BuildWithEvaluator(body parser.SyntaxNode, file source.FileID, eval Constan
 		graph: &Graph{}, file: file, eval: eval,
 		labels: make(map[string]ID), gotos: make(map[string][]Goto),
 	}
-	part := b.sequence(body)
+	var part fragment
+	if body.Kind() == parser.KindBlock {
+		part = b.sequence(body)
+	} else {
+		part = b.statement(body)
+	}
 	b.graph.Entry = part.entry
 	for _, jumps := range b.gotos {
 		b.graph.UnresolvedGotos = append(b.graph.UnresolvedGotos, jumps...)

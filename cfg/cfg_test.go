@@ -35,6 +35,13 @@ func TestReturnTerminatesFlow(t *testing.T) {
 	}
 }
 
+func TestConciseReturnTerminatesFlow(t *testing.T) {
+	graph := graphFor(t, "Float:GetValue(value) return Float:value;")
+	if len(graph.Blocks) != 1 || graph.FallsThrough {
+		t.Fatalf("blocks=%+v fallthrough=%v", graph.Blocks, graph.FallsThrough)
+	}
+}
+
 func TestIfBothBranchesReturn(t *testing.T) {
 	graph := graphFor(t, "main() { if (value) return 1; else return 2; }")
 	if graph.FallsThrough {

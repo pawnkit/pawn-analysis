@@ -191,6 +191,7 @@ const (
 	dirLine
 	dirFile
 	dirEndinput
+	dirEmit
 )
 
 func classifyDirective(name string) directiveKeyword {
@@ -225,6 +226,8 @@ func classifyDirective(name string) directiveKeyword {
 		return dirFile
 	case "endinput":
 		return dirEndinput
+	case "emit":
+		return dirEmit
 	default:
 		return dirUnknown
 	}

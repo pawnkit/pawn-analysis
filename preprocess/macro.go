@@ -19,14 +19,15 @@ func (k MacroKind) String() string {
 
 // Macro is one active #define.
 type Macro struct {
-	Name        string
-	Kind        MacroKind
-	ParamCount  int
-	ParamSlots  map[int]int
-	NamedParams map[string]int
-	Body        []ptok
-	File        uint32
-	DefSpan     ByteRange
+	Name            string
+	Kind            MacroKind
+	ParamCount      int
+	ParamSlots      map[int]int
+	NamedParams     map[string]int
+	FlexiblePattern bool
+	Body            []ptok
+	File            uint32
+	DefSpan         ByteRange
 }
 
 type macroTable struct {

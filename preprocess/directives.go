@@ -78,7 +78,7 @@ func (e *engine) handleDirectiveLine(f *frame) {
 		e.handleAssert(f, hash, lineEndedAtKeyword)
 	case dirEndinput:
 		e.handleEndinput(f, lineEndedAtKeyword)
-	case dirPragma, dirLine, dirFile:
+	case dirPragma, dirLine, dirFile, dirEmit:
 		if !lineEndedAtKeyword {
 			e.collectRestOfLine(f)
 		}
@@ -109,6 +109,7 @@ func (e *engine) handleDefine(f *frame, hash token.Token) {
 	m := Macro{Name: name, Kind: MacroObjectLike, File: f.fileIndex, DefSpan: spanOf(hash, nameTok)}
 
 	if f.cur().Kind == token.LParen && nameTok.End.Offset == f.cur().Start.Offset {
+		m.FlexiblePattern = !closingParenOnLine(f)
 		lparen := f.advance()
 		m.Kind = MacroFunctionLike
 		m.ParamSlots = make(map[int]int)
@@ -164,8 +165,20 @@ func (e *engine) handleDefine(f *frame, hash token.Token) {
 	}
 }
 
+func closingParenOnLine(f *frame) bool {
+	for i := f.pos; i < len(f.toks); i++ {
+		if f.toks[i].Kind == token.RParen {
+			return true
+		}
+		if endsLine(f.toks[i]) {
+			return false
+		}
+	}
+	return false
+}
+
 func macroEqual(a, b Macro) bool {
-	if a.Kind != b.Kind || a.ParamCount != b.ParamCount || len(a.ParamSlots) != len(b.ParamSlots) || len(a.NamedParams) != len(b.NamedParams) || len(a.Body) != len(b.Body) {
+	if a.Kind != b.Kind || a.ParamCount != b.ParamCount || a.FlexiblePattern != b.FlexiblePattern || len(a.ParamSlots) != len(b.ParamSlots) || len(a.NamedParams) != len(b.NamedParams) || len(a.Body) != len(b.Body) {
 		return false
 	}
 	for label, slot := range a.ParamSlots {

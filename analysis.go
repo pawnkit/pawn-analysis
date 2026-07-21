@@ -93,6 +93,7 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 			return nil, err
 		}
 		expandedTable = symbol.BuildMapped(expanded.Syntax(), fileID, mapFile)
+		expandedTable.Diagnostics = removeMacroDeclarationDiagnostics(expandedTable.Diagnostics, pre)
 	}
 	resolver := nameResolver{macros: pre.Macros, symbols: expandedTable, next: opts.Names}
 	semantics := sema.CheckNames(table, resolver)
@@ -114,6 +115,7 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		diagnostics = append(diagnostics, item.ToCore(fileID))
 	}
 	diagnostics = append(diagnostics, table.Diagnostics...)
+	diagnostics = append(diagnostics, expandedTableDiagnostics(expandedTable, fileID)...)
 	diagnostics = append(diagnostics, semantics.Diagnostics...)
 
 	return &Result{
@@ -121,6 +123,19 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		Symbols: table, ExpandedSymbols: expandedTable,
 		Semantics: semantics, ControlFlow: flows, Diagnostics: diagnostics,
 	}, nil
+}
+
+func expandedTableDiagnostics(table *symbol.Table, root source.FileID) []diagnostic.Diagnostic {
+	if table == nil {
+		return nil
+	}
+	var items []diagnostic.Diagnostic
+	for _, item := range table.Diagnostics {
+		if item.Primary.File != root {
+			items = append(items, item)
+		}
+	}
+	return items
 }
 
 func removeMacroDeclarationDiagnostics(items []diagnostic.Diagnostic, pre *preprocess.Result) []diagnostic.Diagnostic {

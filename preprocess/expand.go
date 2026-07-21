@@ -112,7 +112,20 @@ func (e *engine) expandFunctionAt(f *frame, tok token.Token, m Macro) {
 		e.appendOut(toPtok(f.source, tok, f.fileIndex))
 		return
 	}
-	if len(args) != m.ParamCount && f.currentActive() {
+	if len(args) == 0 && m.ParamCount > 0 {
+		args = [][]ptok{nil}
+	}
+	if len(args) > m.ParamCount && m.ParamCount > 0 {
+		last := m.ParamCount - 1
+		merged := append([]ptok(nil), args[last]...)
+		comma := ptok{Token: token.Token{Kind: token.Comma, Start: closeParen.Start, End: closeParen.Start}, text: ",", file: f.fileIndex}
+		for _, extra := range args[m.ParamCount:] {
+			merged = append(merged, comma)
+			merged = append(merged, extra...)
+		}
+		args = append(args[:last], merged)
+	}
+	if len(args) < m.ParamCount && !m.FlexiblePattern && f.currentActive() {
 		e.diag(f, CodeMacroArgumentMismatch, diagnostic.SeverityWarning,
 			"macro invocation argument count mismatch", spanOf(tok, closeParen))
 	}

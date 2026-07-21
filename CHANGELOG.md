@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.7 - 2026-07-21
+
+- Reported declaration conflicts from active included files.
+
 ## 0.1.6 - 2026-07-21
 
 ### Fixed

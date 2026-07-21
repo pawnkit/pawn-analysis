@@ -100,6 +100,24 @@ func TestAnalyzeMapsExpandedIncludeSymbols(t *testing.T) {
 	t.Fatal("included Helper symbol missing")
 }
 
+func TestAnalyzeReportsIncludedRedeclaration(t *testing.T) {
+	result := analysis.Analyze([]byte("#include <helper>\nmain() {}"), analysis.Options{
+		URI: source.FileURI("main.pwn"), RetainExpanded: true,
+		Includes: preprocess.MapResolver{"helper": []byte("stock Value;\nstock Value;\n")},
+	})
+	for _, item := range result.Diagnostics {
+		if item.Code != "pawn-analysis:symbol/redeclared" {
+			continue
+		}
+		uri, ok := result.Registry.URI(item.Primary.File)
+		if !ok || uri.String() != "helper" {
+			t.Fatalf("diagnostic URI = %q, ok=%v", uri, ok)
+		}
+		return
+	}
+	t.Fatal("included redeclaration missing")
+}
+
 func TestAnalyzeResolvesIncludedCallable(t *testing.T) {
 	result := analysis.Analyze([]byte("#include <helper>\nmain() { Helper(); }"), analysis.Options{
 		Includes: preprocess.MapResolver{"helper": []byte("stock Helper(value) { return value; }")},

@@ -51,6 +51,43 @@ func TestFunctionMacroArgumentRepetition(t *testing.T) {
 	}
 }
 
+func TestFunctionMacroFinalParameterConsumesCommas(t *testing.T) {
+	src := "#define COPY(%0,%1) (%0 = %1)\nCOPY(value, 1, 2)\n"
+	r := preprocess.Run([]byte(src), preprocess.Options{})
+	if len(r.Diagnostics) != 0 {
+		t.Fatalf("unexpected diagnostics: %+v", r.Diagnostics)
+	}
+	if got := string(r.ExpandedSource); !strings.Contains(got, "value = 1 , 2") {
+		t.Fatalf("expanded source = %q", got)
+	}
+}
+
+func TestFunctionMacroAcceptsEmptyArgument(t *testing.T) {
+	src := "#define EMPTY(%0) value\nEMPTY()\n"
+	r := preprocess.Run([]byte(src), preprocess.Options{})
+	if len(r.Diagnostics) != 0 {
+		t.Fatalf("unexpected diagnostics: %+v", r.Diagnostics)
+	}
+	if got := string(r.ExpandedSource); !strings.Contains(got, "value") {
+		t.Fatalf("expanded source = %q", got)
+	}
+}
+
+func TestEmitDirectiveIsAccepted(t *testing.T) {
+	r := preprocess.Run([]byte("#emit CONST.pri 1\n"), preprocess.Options{})
+	if len(r.Diagnostics) != 0 {
+		t.Fatalf("unexpected diagnostics: %+v", r.Diagnostics)
+	}
+}
+
+func TestPrefixMacroDoesNotReportArgumentMismatch(t *testing.T) {
+	src := "#define main( ALS_main_:PP_main(\nmain() {}\n"
+	r := preprocess.Run([]byte(src), preprocess.Options{})
+	if len(r.Diagnostics) != 0 {
+		t.Fatalf("unexpected diagnostics: %+v", r.Diagnostics)
+	}
+}
+
 func TestMultiArgFunctionMacro(t *testing.T) {
 	src := "#define CLAMP(%0,%1,%2) ((%0) < (%1) ? (%1) : ((%0) > (%2) ? (%2) : (%0)))\n" +
 		"new c = CLAMP(zones, 0, 16);\n"

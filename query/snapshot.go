@@ -114,17 +114,19 @@ func cloneDocument(document Document) Document {
 
 func optionsHash(opts analysis.Options) [32]byte {
 	hash := sha256.New()
+	var size [8]byte
 	hash.Write([]byte(opts.Revision))
 	hash.Write([]byte{0})
 	if opts.RetainExpanded {
 		hash.Write([]byte{1})
 	}
+	binary.LittleEndian.PutUint64(size[:], uint64(opts.MaxOutputTokens))
+	hash.Write(size[:])
 	keys := make([]string, 0, len(opts.Predefined))
 	for key := range opts.Predefined {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
-	var size [8]byte
 	for _, key := range keys {
 		binary.LittleEndian.PutUint64(size[:], uint64(len(key)))
 		hash.Write(size[:])

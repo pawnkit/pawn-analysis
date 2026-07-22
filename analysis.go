@@ -14,12 +14,13 @@ import (
 
 // Options configures one file analysis.
 type Options struct {
-	URI            source.URI
-	Includes       preprocess.IncludeResolver
-	Names          sema.Resolver
-	Predefined     map[string]string
-	Revision       string
-	RetainExpanded bool
+	URI             source.URI
+	Includes        preprocess.IncludeResolver
+	Names           sema.Resolver
+	Predefined      map[string]string
+	Revision        string
+	RetainExpanded  bool
+	MaxOutputTokens int
 }
 
 // Result is one immutable file analysis.
@@ -55,9 +56,10 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 	fileID := registry.Intern(uri)
 
 	pre := preprocess.Run(text, preprocess.Options{
-		URI:        uri.String(),
-		Resolver:   opts.Includes,
-		Predefined: opts.Predefined,
+		URI:             uri.String(),
+		Resolver:        opts.Includes,
+		Predefined:      opts.Predefined,
+		MaxOutputTokens: opts.MaxOutputTokens,
 	})
 	if err := ctx.Err(); err != nil {
 		return nil, err

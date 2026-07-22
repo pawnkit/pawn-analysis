@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.8 - 2026-07-21
+
+### Added
+
+- Added an optional token limit for expanded analysis output.
+
 ## 0.1.7 - 2026-07-21
 
 - Reported declaration conflicts from active included files.

@@ -161,6 +161,16 @@ func TestAnalyzeDoesNotRedeclareFunctionMacroInvocations(t *testing.T) {
 	}
 }
 
+func TestAnalyzeLimitsExpandedOutput(t *testing.T) {
+	result := analysis.Analyze([]byte("main() { new values[] = { 1, 2, 3, 4, 5, 6, 7, 8, 9 }; }\n"), analysis.Options{MaxOutputTokens: 8})
+	for _, item := range result.Diagnostics {
+		if item.Code == "pawn-analysis:preprocess/output-size-limit" {
+			return
+		}
+	}
+	t.Fatalf("output limit diagnostic missing: %+v", result.Diagnostics)
+}
+
 func BenchmarkAnalyze(b *testing.B) {
 	text := []byte("#define SCALE(%0) ((%0) * 2)\nstock Helper(value) { return SCALE(value); }\nmain() { return Helper(21); }\n")
 	b.ReportAllocs()

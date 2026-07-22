@@ -314,7 +314,9 @@ func functionSignature(n parser.SyntaxNode) (minArgs, maxArgs int, tags []string
 		if param.Kind() != parser.KindParameter {
 			continue
 		}
-		if strings.Contains(param.Text(), "...") {
+		name, _ := param.Field("name")
+		_, generic := param.Field("generic")
+		if strings.Contains(param.Text(), "...") || generic && name.Text() == "va_args" {
 			return minArgs, -1, tags
 		}
 		maxArgs++

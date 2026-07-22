@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.9 - 2026-07-22
+
+### Fixed
+
+- Treat YSI `va_args<>` parameters as variadic.
+
 ## 0.1.8 - 2026-07-21
 
 ### Added

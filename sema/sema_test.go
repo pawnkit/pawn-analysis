@@ -79,6 +79,7 @@ func TestCallArgumentCount(t *testing.T) {
 		{"too many", "Helper(a) {} main() { Helper(1, 2); }", 1},
 		{"default", "Helper(a, b = 2) {} main() { Helper(1); }", 0},
 		{"variadic", "Helper(a, ...) {} main() { Helper(1, 2, 3); }", 0},
+		{"ysi variadic", "Helper(a, va_args<>) {} main() { Helper(1, 2, 3); }", 0},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

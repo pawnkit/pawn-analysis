@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.10 - 2026-07-22
+
+### Fixed
+
+- Stop requiring return values from `void:` functions.
+- Ignore YSI iterator capacities when checking Pawn state variables.
+
 ## 0.1.9 - 2026-07-22
 
 ### Fixed

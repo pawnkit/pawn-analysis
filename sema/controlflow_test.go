@@ -15,6 +15,7 @@ func TestControlFlowDiagnostics(t *testing.T) {
 	}{
 		{"unreachable", "main() { return 1; new value; }", "pawn-analysis:sema/unreachable", 1},
 		{"tagged fallthrough", "Float:GetValue(flag) { if (flag) return 1.0; }", "pawn-analysis:sema/missing-return", 1},
+		{"void fallthrough", "void:Reset() { value = 0; }", "", 0},
 		{"all paths return", "Float:GetValue(flag) { if (flag) return 1.0; else return 2.0; }", "", 0},
 		{"concise return", "signed:Convert(value) return signed:value;", "", 0},
 		{"concise operator return", "stock unsigned:operator=(value) return unsigned:value;", "", 0},

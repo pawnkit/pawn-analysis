@@ -54,7 +54,7 @@ func CheckControlFlow(root parser.SyntaxNode, table *symbol.Table) ([]FunctionFl
 				fmt.Sprintf("undefined label %q", jump.Name), jump.Span,
 			))
 		}
-		if callable.Tag != "" && graph.FallsThrough {
+		if callable.Tag != "" && callable.Tag != "void" && graph.FallsThrough {
 			diagnostics = append(diagnostics, diagnostic.New(
 				"pawn-analysis:sema/missing-return", "pawn-analysis", diagnostic.SeverityWarning,
 				fmt.Sprintf("function %q can finish without returning %s", callable.Name, callable.Tag), callable.Span,

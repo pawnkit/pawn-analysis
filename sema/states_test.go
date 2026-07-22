@@ -25,6 +25,7 @@ func TestStateChecks(t *testing.T) {
 		{"fallback only", "main() { Handler(); } Handler() <> {}", "pawn-analysis:sema/no-defined-states"},
 		{"local state variable", "main() { new value <ready>; } Defines() <ready> {}", "pawn-analysis:sema/invalid-state-variable"},
 		{"state variable shadow", "new value; new value <ready>; Defines() <ready> {}", "pawn-analysis:sema/state-variable-shadow"},
+		{"iterator capacity", "new Iterator:values[MAX_GROUPS]<MAX_PLAYERS>;", ""},
 		{"forward state ignored", "forward Handler() <ready>; Handler() <ready> {}", "pawn-analysis:sema/forward-state-ignored"},
 		{"initialized state variable", "Defines() <ready> {} Defines() <waiting> {} new value <ready> = 1; new value <waiting> = 2;", "pawn-analysis:sema/initialized-state-variable"},
 		{"empty variable states", "new value <>;", "pawn-analysis:sema/no-defined-states"},

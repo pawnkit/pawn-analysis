@@ -234,6 +234,9 @@ func checkStateVariables(root parser.SyntaxNode, file source.FileID) []diagnosti
 				ordinaryGlobals[name.Text()] = struct{}{}
 				continue
 			}
+			if variableTag(variable) == "Iterator" {
+				continue
+			}
 			selector, _ := variable.Field("capacity")
 			_, states := parseStateSelector(selector.Text())
 			if len(states) == 0 {
@@ -277,12 +280,23 @@ func checkStateVariables(root parser.SyntaxNode, file source.FileID) []diagnosti
 			if _, stateful := child.Field("capacity"); !stateful {
 				return
 			}
+			if variableTag(child) == "Iterator" {
+				return
+			}
 			if name, ok := child.Field("name"); ok {
 				diagnostics = append(diagnostics, stateVariableDiagnostic(name, file))
 			}
 		})
 	})
 	return diagnostics
+}
+
+func variableTag(node parser.SyntaxNode) string {
+	tag, ok := node.Field("tag")
+	if !ok {
+		return ""
+	}
+	return strings.TrimSuffix(tag.Text(), ":")
 }
 
 func stateVariableDiagnostic(name parser.SyntaxNode, file source.FileID) diagnostic.Diagnostic {

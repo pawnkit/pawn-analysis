@@ -22,7 +22,8 @@ See [Diagnostics](docs/diagnostics.md) when an analysis code needs more
 context.
 
 Run `go test ./...` for the offline suite. Tests use a sibling `pawn-corpus`
-checkout when present. Set `PAWN_CORPUS_DIR` when it lives elsewhere.
+checkout when present. Set `PAWN_CORPUS_DIR` to its absolute path when it lives
+elsewhere.
 
 ## Contributing
 

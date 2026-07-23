@@ -191,6 +191,16 @@ func TestStateNamesAreNotSymbolReferences(t *testing.T) {
 	}
 }
 
+func TestTagsAreNotSymbolReferences(t *testing.T) {
+	table, _ := buildTable(t, "main() { new Float:value = 1.0; return _:value + bool:1; }")
+	for _, reference := range table.References {
+		switch reference.Name {
+		case "Float", "_", "bool":
+			t.Errorf("tag %q recorded as a symbol reference", reference.Name)
+		}
+	}
+}
+
 func TestReferenceToLaterGlobalResolves(t *testing.T) {
 	table, _ := buildTable(t, "stock First() { return Second(); }\nstock Second() { return 1; }\n")
 	second, ok := findSymbol(table, "Second")

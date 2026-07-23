@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.14 - 2026-07-23
+
+### Added
+
+- Checked cache invalidation for included files and profile defines.
+
+### Fixed
+
+- Stopped treating tag names and `_:` overrides as symbol references.
+- Made corpus-backed query tests resolve the configured checkout correctly.
+
 ## 0.1.13 - 2026-07-23
 
 ### Added

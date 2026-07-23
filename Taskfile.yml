@@ -19,7 +19,7 @@ tasks:
   corpus:
     desc: Run tests against pawn-corpus
     cmds:
-      - PAWN_CORPUS_DIR="${PAWN_CORPUS_DIR:-../pawn-corpus}" go test -count=1 ./...
+      - PAWN_CORPUS_DIR="$(cd "${PAWN_CORPUS_DIR:-../pawn-corpus}" && pwd)" go test -count=1 ./...
 
   vet:
     desc: Run go vet

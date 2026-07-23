@@ -128,6 +128,86 @@ func TestResolverRevisionMatchesCleanAnalysis(t *testing.T) {
 	}
 }
 
+func TestIncludedFileRevisionMatchesCleanAnalysis(t *testing.T) {
+	root := queryCorpusRoot()
+	if root == "" {
+		t.Skip("pawn-corpus is unavailable")
+	}
+	fixtureDir := filepath.Join(root, "preprocessor", "compiler_source_location")
+	text, err := os.ReadFile(filepath.Join(fixtureDir, "main.pwn"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	finalInclude, err := os.ReadFile(filepath.Join(fixtureDir, "broken.inc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	uri := source.FileURI(filepath.Join(fixtureDir, "main.pwn"))
+	snapshot := New(Document{URI: uri, Text: text, Version: 1})
+	initial := analysis.Options{
+		Includes: preprocess.MapResolver{"broken.inc": []byte("#define INCLUDED_VALUE 1\n")},
+		Revision: "include-v1", RetainExpanded: true,
+	}
+	if _, err := snapshot.Analyze(context.Background(), uri, initial); err != nil {
+		t.Fatal(err)
+	}
+
+	final := analysis.Options{
+		Includes: preprocess.MapResolver{"broken.inc": finalInclude},
+		Revision: "include-v2", RetainExpanded: true,
+	}
+	got, err := snapshot.Analyze(context.Background(), uri, final)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := New(Document{URI: uri, Text: text, Version: 1}).Analyze(context.Background(), uri, final)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertAnalysisEqual(t, got, want)
+	if len(got.Preprocess.Diagnostics) == 0 {
+		t.Fatal("updated include did not report its error directive")
+	}
+}
+
+func TestPredefinedProfileChangeMatchesCleanAnalysis(t *testing.T) {
+	root := queryCorpusRoot()
+	if root == "" {
+		t.Skip("pawn-corpus is unavailable")
+	}
+	path := filepath.Join(root, "preprocessor", "profile_openmp_define.pwn")
+	text, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uri := source.FileURI(path)
+	snapshot := New(Document{URI: uri, Text: text, Version: 1})
+	base := analysis.Options{Revision: "samp-037", RetainExpanded: true}
+	if _, err := snapshot.Analyze(context.Background(), uri, base); err != nil {
+		t.Fatal(err)
+	}
+
+	openMP := analysis.Options{
+		Predefined: map[string]string{"__OPEN_MP__": "1"},
+		Revision:   "openmp", RetainExpanded: true,
+	}
+	got, err := snapshot.Analyze(context.Background(), uri, openMP)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := New(Document{URI: uri, Text: text, Version: 1}).Analyze(context.Background(), uri, openMP)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertAnalysisEqual(t, got, want)
+	for _, item := range got.Diagnostics {
+		if item.Severity == diagnostic.SeverityError {
+			t.Fatalf("open.mp profile produced an error: %+v", item)
+		}
+	}
+}
+
 type staticIncludeResolver map[string]string
 
 func (r staticIncludeResolver) Resolve(_, path string, _ bool) ([]byte, string, bool) {
@@ -212,7 +292,14 @@ func assertAnalysisEqual(t *testing.T, got, want *analysis.Result) {
 
 func queryCorpusRoot() string {
 	if root := os.Getenv("PAWN_CORPUS_DIR"); root != "" {
-		return root
+		if filepath.IsAbs(root) {
+			return root
+		}
+		root = filepath.Join("..", root)
+		if info, err := os.Stat(root); err == nil && info.IsDir() {
+			return root
+		}
+		return ""
 	}
 	root := filepath.Join("..", "..", "pawn-corpus")
 	if info, err := os.Stat(root); err == nil && info.IsDir() {

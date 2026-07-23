@@ -148,6 +148,10 @@ func (b *builder) walk(scope ID, n parser.SyntaxNode) {
 	case parser.KindDefinedExpression:
 		// defined(NAME) tests preprocessor macro state, a different
 		// namespace entirely; its operand is not a symbol reference.
+	case parser.KindTaggedExpression:
+		if expression, ok := n.Field("expression"); ok {
+			b.walk(scope, expression)
+		}
 	case parser.KindStateStatement, parser.KindStateSelector:
 		// Automaton and state names use their own namespace.
 	case parser.KindCallExpression:

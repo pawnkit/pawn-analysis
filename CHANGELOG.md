@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.13 - 2026-07-23
+
+### Added
+
+- Checked clean and incremental analysis against the shared preprocessor corpus.
+
 ## 0.1.12 - 2026-07-23
 
 ### Added

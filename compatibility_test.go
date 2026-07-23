@@ -168,6 +168,69 @@ func TestCorpusSemanticDiagnostics(t *testing.T) {
 	}
 }
 
+func TestCorpusPreprocessorDiagnostics(t *testing.T) {
+	root := corpusRoot()
+	if root == "" {
+		t.Skip("pawn-corpus is unavailable")
+	}
+	metadata, err := filepath.Glob(filepath.Join(root, "preprocessor", "*.pwn.meta.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, metaPath := range metadata {
+		meta := readCorpusMetadata(t, metaPath)
+		if meta.Expected.Result == "pending" {
+			continue
+		}
+		t.Run(meta.ID, func(t *testing.T) {
+			path := strings.TrimSuffix(metaPath, ".meta.json")
+			text, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			opts := analysis.Options{URI: source.FileURI(path), Names: sema.MapResolver{}, RetainExpanded: true}
+			if len(meta.Profiles) == 1 && meta.Profiles[0] == "openmp" {
+				opts.Predefined = map[string]string{"__OPEN_MP__": "1"}
+			}
+			result := analysis.Analyze(text, opts)
+			if meta.Expected.Result == "valid" {
+				for _, item := range result.Diagnostics {
+					if item.Severity == diagnostic.SeverityError {
+						t.Errorf("unexpected error: %+v", item)
+					}
+				}
+				return
+			}
+
+			code := "pawn-analysis:" + meta.Expected.DiagnosticClass
+			var matching []diagnostic.Diagnostic
+			for _, item := range result.Diagnostics {
+				if item.Code == code {
+					matching = append(matching, item)
+				}
+			}
+			if len(matching) != len(meta.Expected.Diagnostics) {
+				t.Fatalf("%s diagnostics = %d, want %d: %+v", code, len(matching), len(meta.Expected.Diagnostics), result.Diagnostics)
+			}
+			for i, expected := range meta.Expected.Diagnostics {
+				item := matching[i]
+				if expected.Severity != "" && item.Severity.String() != expected.Severity {
+					t.Errorf("%s severity = %s, want %s", code, item.Severity, expected.Severity)
+				}
+				if expected.Message != "" && normalizeDiagnosticMessage(item.Message) != normalizeDiagnosticMessage(expected.Message) {
+					t.Errorf("%s message = %q, want %q", code, item.Message, expected.Message)
+				}
+				if expected.Line > 0 {
+					line := bytes.Count(text[:int(item.Primary.Start)], []byte{'\n'}) + 1
+					if line != expected.Line {
+						t.Errorf("%s line = %d, want %d", code, line, expected.Line)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestCorpusProjectIncludes(t *testing.T) {
 	root := corpusRoot()
 	if root == "" {
@@ -210,7 +273,8 @@ func TestCorpusProjectIncludes(t *testing.T) {
 }
 
 type corpusMetadata struct {
-	ID       string `json:"id"`
+	ID       string   `json:"id"`
+	Profiles []string `json:"profiles"`
 	Expected struct {
 		Result          string `json:"result"`
 		DiagnosticClass string `json:"diagnosticClass"`

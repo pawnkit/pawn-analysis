@@ -66,6 +66,9 @@ func TestAnalyzeReportsConfirmedMissingName(t *testing.T) {
 	if len(result.Diagnostics) != 1 || result.Diagnostics[0].Code != "pawn-analysis:sema/undefined-symbol" {
 		t.Fatalf("diagnostics: %+v", result.Diagnostics)
 	}
+	if result.Diagnostics[0].DocsURL != "https://github.com/pawnkit/pawn-analysis/blob/main/docs/diagnostics.md" {
+		t.Fatalf("documentation URL = %q", result.Diagnostics[0].DocsURL)
+	}
 }
 
 func TestAnalyzeMapsIncludeDiagnostics(t *testing.T) {

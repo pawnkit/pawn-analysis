@@ -18,6 +18,9 @@ when API metadata or resolver state changes so cached results are invalidated.
 Use `AnalyzeDocuments` when the project host has already built a dependency
 closure.
 
+See [Diagnostics](docs/diagnostics.md) when an analysis code needs more
+context.
+
 Run `go test ./...` for the offline suite. Tests use a sibling `pawn-corpus`
 checkout when present. Set `PAWN_CORPUS_DIR` when it lives elsewhere.
 

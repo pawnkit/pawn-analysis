@@ -119,6 +119,11 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 	diagnostics = append(diagnostics, table.Diagnostics...)
 	diagnostics = append(diagnostics, expandedTableDiagnostics(expandedTable, fileID)...)
 	diagnostics = append(diagnostics, semantics.Diagnostics...)
+	for i := range diagnostics {
+		if diagnostics[i].Source == "pawn-analysis" && diagnostics[i].DocsURL == "" {
+			diagnostics[i].DocsURL = "https://github.com/pawnkit/pawn-analysis/blob/main/docs/diagnostics.md"
+		}
+	}
 
 	return &Result{
 		File: fileID, Registry: registry, Preprocess: pre, Parse: parsed, ExpandedParse: expanded,

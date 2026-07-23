@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.12 - 2026-07-23
+
+### Added
+
+- Linked analysis diagnostics to a short troubleshooting reference.
+
 ## 0.1.11 - 2026-07-23
 
 ### Fixed

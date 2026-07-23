@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.11 - 2026-07-23
+
+### Fixed
+
+- Updated the Pawn parser for current macro and include syntax.
+
 ## 0.1.10 - 2026-07-22
 
 ### Fixed

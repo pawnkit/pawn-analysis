@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.16 - 2026-07-24
+
+### Added
+
+- Added `preprocess.TokenCache` and `Options.TokenCache`, which reuse an
+  include file's token stream across calls when its content hasn't changed.
+
 ## 0.1.15 - 2026-07-24
 
 ### Fixed

@@ -21,6 +21,7 @@ type Options struct {
 	// profile's built-in defines such as OPEN_MP). Values are parsed as a
 	// single macro-body token run; an empty value defines an empty macro.
 	Predefined map[string]string
+	TokenCache *TokenCache
 
 	MaxExpansionDepth   int
 	MaxConditionalDepth int

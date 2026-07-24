@@ -22,6 +22,7 @@ type Options struct {
 	RetainExpanded  bool
 	MaxOutputTokens int
 	SkipSemantics   bool
+	TokenCache      *preprocess.TokenCache
 }
 
 // Result is one immutable file analysis.
@@ -61,6 +62,7 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		Resolver:        opts.Includes,
 		Predefined:      opts.Predefined,
 		MaxOutputTokens: opts.MaxOutputTokens,
+		TokenCache:      opts.TokenCache,
 	})
 	if err := ctx.Err(); err != nil {
 		return nil, err

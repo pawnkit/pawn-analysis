@@ -1,7 +1,6 @@
 package preprocess
 
 import (
-	"github.com/pawnkit/pawn-parser/lexer"
 	"github.com/pawnkit/pawn-parser/token"
 	"github.com/pawnkit/pawnkit-core/diagnostic"
 )
@@ -75,7 +74,7 @@ func (e *engine) handleInclude(f *frame, hash token.Token, optional bool) {
 
 			e.includeStack[uri] = true
 			child := &frame{
-				fileIndex: childIndex, source: content, toks: lexer.Tokenize(content),
+				fileIndex: childIndex, source: content, toks: e.opts.TokenCache.tokenize(uri, content),
 				uri: uri, depth: f.depth + 1, lineStart: true,
 			}
 			e.run(child)

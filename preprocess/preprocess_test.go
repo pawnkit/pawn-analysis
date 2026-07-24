@@ -200,6 +200,26 @@ func TestIncludeGuardPattern(t *testing.T) {
 	}
 }
 
+func TestTokenCacheProducesIdenticalResultsAcrossRuns(t *testing.T) {
+	resolver := preprocess.MapResolver{
+		"helper.inc": []byte("#define HELPER_VALUE 7\nstock Helper() { return HELPER_VALUE; }\n"),
+	}
+	src := "#include \"helper.inc\"\nmain() { Helper(); }\n"
+	cache := preprocess.NewTokenCache()
+
+	first := preprocess.Run([]byte(src), preprocess.Options{Resolver: resolver, TokenCache: cache})
+	second := preprocess.Run([]byte(src), preprocess.Options{Resolver: resolver, TokenCache: cache})
+
+	firstText := expandedText(t, first)
+	secondText := expandedText(t, second)
+	if firstText != secondText {
+		t.Fatalf("expanded output changed across cached runs:\n%q\n%q", firstText, secondText)
+	}
+	if len(first.Diagnostics) != 0 || len(second.Diagnostics) != 0 {
+		t.Fatalf("unexpected diagnostics: %v / %v", first.Diagnostics, second.Diagnostics)
+	}
+}
+
 func TestTryIncludeMissingIsSilent(t *testing.T) {
 	src := "#tryinclude <does_not_exist>\nnew x = 1;\n"
 	r := preprocess.Run([]byte(src), preprocess.Options{Resolver: preprocess.MapResolver{}})

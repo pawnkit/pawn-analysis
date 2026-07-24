@@ -57,6 +57,7 @@ func (s *Snapshot) AnalyzeDocuments(ctx context.Context, uris []source.URI, opts
 	for _, uri := range uris {
 		indexOpts := opts
 		indexOpts.RetainExpanded = true
+		indexOpts.SkipSemantics = true
 		result, err := s.Analyze(ctx, uri, indexOpts)
 		if err != nil {
 			return nil, err

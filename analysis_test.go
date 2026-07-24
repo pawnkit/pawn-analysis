@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 
 	analysis "github.com/pawnkit/pawn-analysis"
@@ -179,5 +181,44 @@ func BenchmarkAnalyze(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		analysis.Analyze(text, analysis.Options{})
+	}
+}
+
+// syntheticGlobalGamemode builds many global functions calling earlier ones.
+func syntheticGlobalGamemode(functions int) []byte {
+	var sb strings.Builder
+	sb.WriteString("#define MAX_PLAYERS 1000\n\n")
+	for i := range functions {
+		fmt.Fprintf(&sb, "stock Func%d(playerid, value) {\n", i)
+		sb.WriteString("    new x = value + MAX_PLAYERS;\n")
+		for c := 0; c < 5 && c < i; c++ {
+			fmt.Fprintf(&sb, "    x = Func%d(playerid, x);\n", i-1-c)
+		}
+		sb.WriteString("    return x;\n}\n\n")
+	}
+	return []byte(sb.String())
+}
+
+// BenchmarkAnalyzeLargeGamemodeExpanded uses the RetainExpanded path pawnlsp uses.
+func BenchmarkAnalyzeLargeGamemodeExpanded(b *testing.B) {
+	text := syntheticGlobalGamemode(2000)
+	b.ReportAllocs()
+	b.SetBytes(int64(len(text)))
+	for b.Loop() {
+		analysis.Analyze(text, analysis.Options{RetainExpanded: true})
+	}
+}
+
+// BenchmarkAnalyzeGlobalScanScaling checks global name resolution scaling.
+func BenchmarkAnalyzeGlobalScanScaling(b *testing.B) {
+	for _, n := range []int{500, 1000, 2000, 4000} {
+		text := syntheticGlobalGamemode(n)
+		b.Run(fmt.Sprintf("functions=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			b.SetBytes(int64(len(text)))
+			for b.Loop() {
+				analysis.Analyze(text, analysis.Options{RetainExpanded: true})
+			}
+		})
 	}
 }

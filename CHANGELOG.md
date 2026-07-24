@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.15 - 2026-07-24
+
+### Fixed
+
+- Removed a duplicate tokenization pass over the source in `preprocess.Run`.
+- Replaced a linear scan of all global symbols in name resolution with a map lookup.
+- Replaced a linear scan of all symbols and references in `sema.CheckTags` with a span index.
+- Added `Options.SkipSemantics` and used it in workspace-resolver indexing to
+  skip semantic checks whose results were discarded.
+
 ## 0.1.14 - 2026-07-23
 
 ### Added

@@ -319,7 +319,8 @@ func Run(src []byte, opts Options) *Result {
 		e.macros.define(Macro{Name: name, Kind: MacroObjectLike, Body: tokenizeBody(value)})
 	}
 
-	root := &frame{fileIndex: 0, source: src, toks: lexer.Tokenize(src), uri: opts.URI, lineStart: true}
+	originalTokens := lexer.Tokenize(src)
+	root := &frame{fileIndex: 0, source: src, toks: originalTokens, uri: opts.URI, lineStart: true}
 	e.run(root)
 	e.appendEOF()
 	e.backfillPositions()
@@ -328,7 +329,7 @@ func Run(src []byte, opts Options) *Result {
 		Files:          e.files,
 		Source:         src,
 		ExpandedSource: e.expandedBuf,
-		OriginalTokens: lexer.Tokenize(src),
+		OriginalTokens: originalTokens,
 		ExpandedTokens: e.out,
 		Branches:       e.branches,
 		Includes:       e.includes,

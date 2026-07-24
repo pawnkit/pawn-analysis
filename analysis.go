@@ -21,6 +21,7 @@ type Options struct {
 	Revision        string
 	RetainExpanded  bool
 	MaxOutputTokens int
+	SkipSemantics   bool
 }
 
 // Result is one immutable file analysis.
@@ -97,13 +98,18 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		expandedTable = symbol.BuildMapped(expanded.Syntax(), fileID, mapFile)
 		expandedTable.Diagnostics = removeMacroDeclarationDiagnostics(expandedTable.Diagnostics, pre)
 	}
-	resolver := nameResolver{macros: pre.Macros, symbols: expandedTable, next: opts.Names}
-	semantics := sema.CheckNames(table, resolver)
-	semantics.Diagnostics = append(semantics.Diagnostics, sema.CheckTags(parsed.Syntax(), table, resolver)...)
-	semantics.Diagnostics = append(semantics.Diagnostics, sema.CheckStates(parsed.Syntax(), fileID)...)
-	semantics.Diagnostics = append(semantics.Diagnostics, sema.CheckConstantOrder(parsed.Syntax(), table)...)
-	flows, flowDiagnostics := sema.CheckControlFlow(parsed.Syntax(), table)
-	semantics.Diagnostics = append(semantics.Diagnostics, flowDiagnostics...)
+	var semantics sema.Result
+	var flows []sema.FunctionFlow
+	if !opts.SkipSemantics {
+		resolver := newNameResolver(pre.Macros, expandedTable, opts.Names)
+		semantics = sema.CheckNames(table, resolver)
+		semantics.Diagnostics = append(semantics.Diagnostics, sema.CheckTags(parsed.Syntax(), table, resolver)...)
+		semantics.Diagnostics = append(semantics.Diagnostics, sema.CheckStates(parsed.Syntax(), fileID)...)
+		semantics.Diagnostics = append(semantics.Diagnostics, sema.CheckConstantOrder(parsed.Syntax(), table)...)
+		var flowDiagnostics []diagnostic.Diagnostic
+		flows, flowDiagnostics = sema.CheckControlFlow(parsed.Syntax(), table)
+		semantics.Diagnostics = append(semantics.Diagnostics, flowDiagnostics...)
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -168,9 +174,25 @@ func insideMacroInvocation(span source.Span, pre *preprocess.Result) bool {
 }
 
 type nameResolver struct {
-	macros  map[string]preprocess.Macro
-	symbols *symbol.Table
-	next    sema.Resolver
+	macros      map[string]preprocess.Macro
+	symbols     *symbol.Table
+	globalNames map[string]symbol.ID
+	next        sema.Resolver
+}
+
+// newNameResolver reuses the file scope's existing name index instead of
+// scanning all symbols on every ResolveName/ResolveCallable call.
+func newNameResolver(macros map[string]preprocess.Macro, symbols *symbol.Table, next sema.Resolver) nameResolver {
+	var globalNames map[string]symbol.ID
+	if symbols != nil {
+		for _, scope := range symbols.Scopes {
+			if scope.Kind == symbol.ScopeFile {
+				globalNames = scope.Names
+				break
+			}
+		}
+	}
+	return nameResolver{macros: macros, symbols: symbols, globalNames: globalNames, next: next}
 }
 
 func (r nameResolver) ResolveName(name string) sema.NameState {
@@ -199,14 +221,9 @@ func (r nameResolver) ResolveCallable(name string) (sema.Callable, bool) {
 }
 
 func (r nameResolver) global(name string) (symbol.Symbol, bool) {
-	if r.symbols == nil {
+	id, ok := r.globalNames[name]
+	if !ok {
 		return symbol.Symbol{}, false
 	}
-	for _, item := range r.symbols.Symbols {
-		scope, ok := r.symbols.Scope(item.Scope)
-		if ok && scope.Kind == symbol.ScopeFile && item.Name == name {
-			return item, true
-		}
-	}
-	return symbol.Symbol{}, false
+	return r.symbols.Symbol(id)
 }

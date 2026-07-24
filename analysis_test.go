@@ -5,12 +5,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
 	analysis "github.com/pawnkit/pawn-analysis"
 	"github.com/pawnkit/pawn-analysis/preprocess"
 	"github.com/pawnkit/pawn-analysis/sema"
+	parser "github.com/pawnkit/pawn-parser"
 	"github.com/pawnkit/pawnkit-core/source"
 )
 
@@ -32,6 +34,15 @@ func TestAnalyzePipeline(t *testing.T) {
 	}
 	if len(result.Diagnostics) != 0 {
 		t.Fatalf("unexpected diagnostics: %+v", result.Diagnostics)
+	}
+}
+
+func TestAnalyzeRootParseMatchesDirectParseCompact(t *testing.T) {
+	text := []byte("#define TARGET Helper\nmain() { TARGET(); new x[10]; }\nHelper() { return 1; }\n")
+	result := analysis.Analyze(text, analysis.Options{URI: source.FileURI("test.pwn")})
+	want := parser.ParseCompact(text, parser.ParseOptions{})
+	if !reflect.DeepEqual(result.Parse, want) {
+		t.Fatalf("root parse diverged from a direct ParseCompact call:\ngot:  %+v\nwant: %+v", result.Parse, want)
 	}
 }
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.17 - 2026-07-24
+
+### Fixed
+
+- Stopped re-tokenizing the entry file a second time in `AnalyzeContext`; it
+  now reuses the token stream `preprocess.Run` already built.
+
 ## 0.1.16 - 2026-07-24
 
 ### Added

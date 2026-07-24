@@ -81,7 +81,7 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		}
 		return fileID
 	}
-	parsed := parser.ParseCompact(text, parser.ParseOptions{})
+	parsed := parser.ParseTokensCompact(text, pre.OriginalTokens, parser.ParseOptions{})
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

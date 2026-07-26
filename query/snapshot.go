@@ -120,6 +120,9 @@ func optionsHash(opts analysis.Options) [32]byte {
 	if opts.RetainExpanded {
 		hash.Write([]byte{1})
 	}
+	if opts.SkipSemantics {
+		hash.Write([]byte{2})
+	}
 	binary.LittleEndian.PutUint64(size[:], uint64(opts.MaxOutputTokens))
 	hash.Write(size[:])
 	keys := make([]string, 0, len(opts.Predefined))

@@ -25,6 +25,31 @@ func TestAnalyzeContextCancelled(t *testing.T) {
 	}
 }
 
+func TestCompleteContextMatchesCleanAnalysis(t *testing.T) {
+	text := []byte("stock Helper(value) { return value; }\nmain() { Helper(1); }\n")
+	opts := analysis.Options{URI: source.FileURI("test.pwn"), RetainExpanded: true}
+	prepared, err := analysis.AnalyzeContext(context.Background(), text, analysis.Options{
+		URI: opts.URI, RetainExpanded: true, SkipSemantics: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := analysis.CompleteContext(context.Background(), prepared, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := analysis.AnalyzeContext(context.Background(), text, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.Diagnostics, want.Diagnostics) {
+		t.Fatalf("diagnostics differ:\ngot  %#v\nwant %#v", got.Diagnostics, want.Diagnostics)
+	}
+	if got.Parse != prepared.Parse || got.Symbols != prepared.Symbols {
+		t.Fatal("completion did not reuse prepared syntax and symbols")
+	}
+}
+
 func TestAnalyzePipeline(t *testing.T) {
 	result := analysis.Analyze([]byte("#define TARGET Helper\nmain() { TARGET(); }\nHelper() {}\n"), analysis.Options{
 		URI: source.FileURI("test.pwn"), Names: sema.MapResolver{}, RetainExpanded: true,

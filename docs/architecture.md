@@ -21,8 +21,9 @@ Original syntax and symbols retain editor offsets. Expanded results are opt-in b
 
 The query package caches analysis across immutable, versioned snapshots. Its
 workspace pass resolves file-scope declarations across every document in the
-same snapshot. A revision key invalidates results when resolver or API state
-changes.
+same snapshot. It prepares syntax once, builds the shared name resolver, then
+completes semantics from those prepared results. A revision key invalidates
+results when resolver or API state changes.
 
 Project hosts that know their dependency graph can use `AnalyzeDocuments` to
 exclude unrelated files from name resolution.

@@ -27,6 +27,29 @@ func TestSnapshotCachesUnchangedAnalysis(t *testing.T) {
 	}
 }
 
+func TestSnapshotSeparatesPreparedAndCompleteResults(t *testing.T) {
+	uri := source.FileURI("main.pwn")
+	snapshot := New(Document{URI: uri, Text: []byte("main() { Missing(); }\n"), Version: 1})
+	prepared, err := snapshot.Analyze(context.Background(), uri, analysis.Options{
+		Names: sema.MapResolver{}, SkipSemantics: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	complete, err := snapshot.Analyze(context.Background(), uri, analysis.Options{
+		Names: sema.MapResolver{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared == complete {
+		t.Fatal("prepared analysis was reused as a complete result")
+	}
+	if len(complete.Semantics.Diagnostics) == 0 {
+		t.Fatal("complete analysis did not run semantics")
+	}
+}
+
 func TestSnapshotUpdateInvalidatesChangedDocument(t *testing.T) {
 	uri := source.FileURI("main.pwn")
 	snapshot := New(Document{URI: uri, Text: []byte("main() {}"), Version: 1})

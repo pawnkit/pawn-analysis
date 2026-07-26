@@ -3,6 +3,7 @@ package analysis
 
 import (
 	"context"
+	"errors"
 
 	"github.com/pawnkit/pawn-analysis/preprocess"
 	"github.com/pawnkit/pawn-analysis/sema"
@@ -37,6 +38,7 @@ type Result struct {
 	Semantics       sema.Result
 	ControlFlow     []sema.FunctionFlow
 	Diagnostics     []diagnostic.Diagnostic
+	baseDiagnostics []diagnostic.Diagnostic
 }
 
 // Analyze runs the shared per-file pipeline.
@@ -100,44 +102,67 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		expandedTable = symbol.BuildMapped(expanded.Syntax(), fileID, mapFile)
 		expandedTable.Diagnostics = removeMacroDeclarationDiagnostics(expandedTable.Diagnostics, pre)
 	}
-	var semantics sema.Result
-	var flows []sema.FunctionFlow
-	if !opts.SkipSemantics {
-		resolver := newNameResolver(pre.Macros, expandedTable, opts.Names)
-		semantics = sema.CheckNames(table, resolver)
-		semantics.Diagnostics = append(semantics.Diagnostics, sema.CheckTags(parsed.Syntax(), table, resolver)...)
-		semantics.Diagnostics = append(semantics.Diagnostics, sema.CheckStates(parsed.Syntax(), fileID)...)
-		semantics.Diagnostics = append(semantics.Diagnostics, sema.CheckConstantOrder(parsed.Syntax(), table)...)
-		var flowDiagnostics []diagnostic.Diagnostic
-		flows, flowDiagnostics = sema.CheckControlFlow(parsed.Syntax(), table)
-		semantics.Diagnostics = append(semantics.Diagnostics, flowDiagnostics...)
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	if !opts.RetainExpanded {
-		expanded = nil
-		expandedTable = nil
-	}
-
 	diagnostics := pre.ToRegistryDiagnostics(registry, fileID)
 	for _, item := range parsed.Diagnostics {
 		diagnostics = append(diagnostics, item.ToCore(fileID))
 	}
 	diagnostics = append(diagnostics, table.Diagnostics...)
 	diagnostics = append(diagnostics, expandedTableDiagnostics(expandedTable, fileID)...)
-	diagnostics = append(diagnostics, semantics.Diagnostics...)
-	for i := range diagnostics {
-		if diagnostics[i].Source == "pawn-analysis" && diagnostics[i].DocsURL == "" {
-			diagnostics[i].DocsURL = "https://github.com/pawnkit/pawn-analysis/blob/main/docs/diagnostics.md"
-		}
-	}
-
-	return &Result{
+	addDiagnosticDocs(diagnostics)
+	prepared := &Result{
 		File: fileID, Registry: registry, Preprocess: pre, Parse: parsed, ExpandedParse: expanded,
 		Symbols: table, ExpandedSymbols: expandedTable,
-		Semantics: semantics, ControlFlow: flows, Diagnostics: diagnostics,
-	}, nil
+		Diagnostics: diagnostics, baseDiagnostics: diagnostics,
+	}
+	if opts.SkipSemantics {
+		return retainExpanded(prepared, opts.RetainExpanded), nil
+	}
+	return CompleteContext(ctx, prepared, opts)
+}
+
+// CompleteContext runs semantics on an existing parse result.
+func CompleteContext(ctx context.Context, prepared *Result, opts Options) (*Result, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if prepared == nil || prepared.Parse == nil || prepared.Symbols == nil || prepared.Preprocess == nil {
+		return nil, errors.New("analysis result is incomplete")
+	}
+	resolver := newNameResolver(prepared.Preprocess.Macros, prepared.ExpandedSymbols, opts.Names)
+	semantics := sema.CheckNames(prepared.Symbols, resolver)
+	semantics.Diagnostics = append(semantics.Diagnostics, sema.CheckTags(prepared.Parse.Syntax(), prepared.Symbols, resolver)...)
+	semantics.Diagnostics = append(semantics.Diagnostics, sema.CheckStates(prepared.Parse.Syntax(), prepared.File)...)
+	semantics.Diagnostics = append(semantics.Diagnostics, sema.CheckConstantOrder(prepared.Parse.Syntax(), prepared.Symbols)...)
+	flows, flowDiagnostics := sema.CheckControlFlow(prepared.Parse.Syntax(), prepared.Symbols)
+	semantics.Diagnostics = append(semantics.Diagnostics, flowDiagnostics...)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	result := *prepared
+	result.Semantics = semantics
+	result.ControlFlow = flows
+	result.Diagnostics = append(append([]diagnostic.Diagnostic(nil), prepared.baseDiagnostics...), semantics.Diagnostics...)
+	addDiagnosticDocs(result.Diagnostics)
+	return retainExpanded(&result, opts.RetainExpanded), nil
+}
+
+func retainExpanded(result *Result, retain bool) *Result {
+	if retain {
+		return result
+	}
+	clone := *result
+	clone.ExpandedParse = nil
+	clone.ExpandedSymbols = nil
+	return &clone
+}
+
+func addDiagnosticDocs(items []diagnostic.Diagnostic) {
+	for i := range items {
+		if items[i].Source == "pawn-analysis" && items[i].DocsURL == "" {
+			items[i].DocsURL = "https://github.com/pawnkit/pawn-analysis/blob/main/docs/diagnostics.md"
+		}
+	}
 }
 
 func expandedTableDiagnostics(table *symbol.Table, root source.FileID) []diagnostic.Diagnostic {

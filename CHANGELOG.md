@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.20 - 2026-07-26
+
+### Changed
+
+- Workspace analysis now reuses its first parse when resolving shared names.
+
 ## 0.1.19 - 2026-07-26
 
 ### Changed

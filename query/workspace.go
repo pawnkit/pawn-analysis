@@ -54,6 +54,7 @@ func (s *Snapshot) AnalyzeDocuments(ctx context.Context, uris []source.URI, opts
 	sort.Slice(uris, func(i, j int) bool { return uris[i].String() < uris[j].String() })
 
 	resolver := newWorkspaceResolver(opts.Names)
+	prepared := make(map[source.URI]*analysis.Result, len(uris))
 	for _, uri := range uris {
 		indexOpts := opts
 		indexOpts.RetainExpanded = true
@@ -62,6 +63,7 @@ func (s *Snapshot) AnalyzeDocuments(ctx context.Context, uris []source.URI, opts
 		if err != nil {
 			return nil, err
 		}
+		prepared[uri] = result
 		table := result.ExpandedSymbols
 		if table == nil {
 			table = result.Symbols
@@ -74,11 +76,10 @@ func (s *Snapshot) AnalyzeDocuments(ctx context.Context, uris []source.URI, opts
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		document := s.docs[uri]
 		fileOpts := opts
 		fileOpts.URI = uri
 		fileOpts.Names = resolver
-		result, err := analysis.AnalyzeContext(ctx, document.Text, fileOpts)
+		result, err := analysis.CompleteContext(ctx, prepared[uri], fileOpts)
 		if err != nil {
 			return nil, err
 		}

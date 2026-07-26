@@ -102,22 +102,14 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 	var table *symbol.Table
 	var expanded *parser.CompactFile
 	var expandedTable *symbol.Table
-	buildOriginal := func() {
+	parseOriginal := func() {
 		current := beginStage(opts.Trace, StageParseOriginal)
 		parsed = parser.ParseTokensCompact(text, pre.OriginalTokens, parser.ParseOptions{})
 		current.end(ctx, 0)
-		current = beginStage(opts.Trace, StageSymbolsOriginal)
-		table = symbol.Build(parsed.Syntax(), fileID)
-		table.Diagnostics = removeMacroDeclarationDiagnostics(table.Diagnostics, pre)
-		current.end(ctx, 0)
 	}
-	buildExpanded := func() {
+	parseExpanded := func() {
 		current := beginStage(opts.Trace, StageParseExpanded)
 		expanded = parser.ParseTokensCompact(pre.ExpandedSource, pre.ExpandedTokens, parser.ParseOptions{})
-		current.end(ctx, 0)
-		current = beginStage(opts.Trace, StageSymbolsExpanded)
-		expandedTable = symbol.BuildMapped(expanded.Syntax(), fileID, mapFile)
-		expandedTable.Diagnostics = removeMacroDeclarationDiagnostics(expandedTable.Diagnostics, pre)
 		current.end(ctx, 0)
 	}
 	needsExpanded := opts.RetainExpanded || opts.Includes != nil
@@ -127,15 +119,25 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
-			buildExpanded()
+			parseExpanded()
 		}()
-		buildOriginal()
+		parseOriginal()
 		wait.Wait()
 	} else {
-		buildOriginal()
+		parseOriginal()
 		if needsExpanded {
-			buildExpanded()
+			parseExpanded()
 		}
+	}
+	stage = beginStage(opts.Trace, StageSymbolsOriginal)
+	table = symbol.Build(parsed.Syntax(), fileID)
+	table.Diagnostics = removeMacroDeclarationDiagnostics(table.Diagnostics, pre)
+	stage.end(ctx, 0)
+	if needsExpanded {
+		stage = beginStage(opts.Trace, StageSymbolsExpanded)
+		expandedTable = symbol.BuildMapped(expanded.Syntax(), fileID, mapFile)
+		expandedTable.Diagnostics = removeMacroDeclarationDiagnostics(expandedTable.Diagnostics, pre)
+		stage.end(ctx, 0)
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err

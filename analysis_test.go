@@ -42,8 +42,8 @@ func TestAnalyzeTraceReportsStages(t *testing.T) {
 	want := []analysis.Stage{
 		analysis.StagePreprocess,
 		analysis.StageParseOriginal,
-		analysis.StageSymbolsOriginal,
 		analysis.StageParseExpanded,
+		analysis.StageSymbolsOriginal,
 		analysis.StageSymbolsExpanded,
 		analysis.StageSemanticNames,
 		analysis.StageSemanticTags,

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.2 - 2026-07-26
+
+### Performance
+
+- Kept symbol construction sequential after concurrent parsing to reduce
+  memory contention.
+- Reduced the traced 50,000-line LSP benchmark from 453–485 ms to 382–423 ms.
+
 ## 0.6.1 - 2026-07-26
 
 ### Performance

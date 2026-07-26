@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.1 - 2026-07-26
+
+### Changed
+
+- Stopped hashing full document contents for immutable snapshot cache lookups.
+- Added a large cached-analysis benchmark.
+
 ## 0.4.0 - 2026-07-26
 
 ### Added

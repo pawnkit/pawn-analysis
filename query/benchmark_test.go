@@ -57,6 +57,24 @@ func BenchmarkSnapshotCachedAnalysis(b *testing.B) {
 	}
 }
 
+func BenchmarkSnapshotCachedLargeAnalysis(b *testing.B) {
+	uri := source.FileURI("gamemode.pwn")
+	text := syntheticGlobalGamemode(2000)
+	snapshot := New(Document{URI: uri, Text: text, Version: 1})
+	ctx := context.Background()
+	if _, err := snapshot.Analyze(ctx, uri, analysis.Options{}); err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.SetBytes(int64(len(text)))
+	b.ResetTimer()
+	for b.Loop() {
+		if _, err := snapshot.Analyze(ctx, uri, analysis.Options{}); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func BenchmarkSnapshotUpdateLargeDocument(b *testing.B) {
 	text := syntheticGlobalGamemode(2000)
 	uri := source.FileURI("gamemode.pwn")

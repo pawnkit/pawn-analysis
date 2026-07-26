@@ -33,7 +33,6 @@ type Snapshot struct {
 type cacheKey struct {
 	uri     source.URI
 	version int64
-	content [32]byte
 	options [32]byte
 }
 
@@ -128,7 +127,7 @@ func (s *Snapshot) Analyze(ctx context.Context, uri source.URI, opts analysis.Op
 	}
 	opts.URI = uri
 	optionKey := optionsHash(opts)
-	key := cacheKey{uri: uri, version: document.Version, content: sha256.Sum256(document.Text), options: optionKey}
+	key := cacheKey{uri: uri, version: document.Version, options: optionKey}
 	s.mu.Lock()
 	result := s.cache[key]
 	s.mu.Unlock()

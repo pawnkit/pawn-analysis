@@ -37,6 +37,44 @@ func BuildMappedContext(
 	return build(ctx, true, root, file, files)
 }
 
+// BuildMappedDeclarationsContext builds mapped top-level declarations.
+func BuildMappedDeclarationsContext(
+	ctx context.Context,
+	root parser.SyntaxNode,
+	file source.FileID,
+	files func(uint32) source.FileID,
+) (*Table, error) {
+	return buildDeclarations(ctx, root, file, files)
+}
+
+func buildDeclarations(
+	ctx context.Context,
+	root parser.SyntaxNode,
+	file source.FileID,
+	files func(uint32) source.FileID,
+) (*Table, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	b := &builder{
+		ctx: ctx, cancellable: true, declarationsOnly: true,
+		file: file, files: files, table: &Table{File: file},
+	}
+	fileScope := b.newScope(ScopeFile, 0)
+	decls := root.Declarations()
+	for decls.Next() {
+		b.walk(fileScope, decls.Declaration())
+		if b.cancelled != nil {
+			return nil, b.cancelled
+		}
+	}
+	b.buildSpanIndexes()
+	if b.cancelled != nil {
+		return nil, b.cancelled
+	}
+	return b.table, nil
+}
+
 func build(
 	ctx context.Context,
 	cancellable bool,
@@ -89,13 +127,14 @@ func (b *builder) buildSpanIndexes() {
 }
 
 type builder struct {
-	ctx         context.Context
-	cancellable bool
-	cancelled   error
-	steps       uint32
-	file        source.FileID
-	files       func(uint32) source.FileID
-	table       *Table
+	ctx              context.Context
+	cancellable      bool
+	cancelled        error
+	steps            uint32
+	declarationsOnly bool
+	file             source.FileID
+	files            func(uint32) source.FileID
+	table            *Table
 }
 
 func (b *builder) pollCancellation() bool {
@@ -303,7 +342,7 @@ func (b *builder) walkVariableDecl(scope ID, n parser.SyntaxNode) {
 			IsArray: isArray, IsConst: isConst, IsStatic: isStatic, Span: b.spanOf(nameNode),
 		}
 		b.declare(scope, sym)
-		if init, ok := d.Field("initializer"); ok {
+		if init, ok := d.Field("initializer"); ok && !b.declarationsOnly {
 			b.walk(scope, init)
 		}
 	}
@@ -368,6 +407,9 @@ func (b *builder) walkFunction(scope ID, n parser.SyntaxNode) {
 		id = b.appendSymbol(sym)
 	} else {
 		id = b.declare(scope, sym)
+	}
+	if b.declarationsOnly {
+		return
 	}
 
 	funcScope := b.newScope(ScopeFunction, scope)
@@ -470,7 +512,7 @@ func (b *builder) walkEnum(scope ID, n parser.SyntaxNode) {
 			Name: nameNode.Text(), Kind: KindConstant, Tag: tag, IsArray: isArray, IsConst: true,
 			Span: b.spanOf(nameNode),
 		})
-		if val, ok := entry.Field("value"); ok {
+		if val, ok := entry.Field("value"); ok && !b.declarationsOnly {
 			b.walk(scope, val)
 		}
 	}

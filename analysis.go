@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"runtime"
+	"sort"
 	"sync"
 
 	"github.com/pawnkit/pawn-analysis/preprocess"
@@ -150,22 +151,27 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		stage.end(ctx, 0)
 		return nil, err
 	}
-	table.Diagnostics = removeMacroDeclarationDiagnostics(table.Diagnostics, pre)
 	stage.end(ctx, 0)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if needsExpanded {
 		stage = beginStage(opts.Trace, StageSymbolsExpanded)
-		expandedTable, err = symbol.BuildMappedContext(ctx, expanded.Syntax(), fileID, mapFile)
+		expandedTable, err = symbol.BuildMappedDeclarationsContext(ctx, expanded.Syntax(), fileID, mapFile)
 		if err != nil {
 			stage.end(ctx, 0)
 			return nil, err
 		}
-		expandedTable.Diagnostics = removeMacroDeclarationDiagnostics(expandedTable.Diagnostics, pre)
 		stage.end(ctx, 0)
 		if err := ctx.Err(); err != nil {
 			return nil, err
+		}
+	}
+	if hasRedeclarationDiagnostics(table) || hasRedeclarationDiagnostics(expandedTable) {
+		invocations := macroInvocationRanges(pre)
+		table.Diagnostics = removeMacroDeclarationDiagnostics(table.Diagnostics, invocations)
+		if expandedTable != nil {
+			expandedTable.Diagnostics = removeMacroDeclarationDiagnostics(expandedTable.Diagnostics, invocations)
 		}
 	}
 	diagnostics := pre.ToRegistryDiagnostics(registry, fileID)
@@ -329,24 +335,74 @@ func expandedTableDiagnostics(table *symbol.Table, root source.FileID) []diagnos
 	return items
 }
 
-func removeMacroDeclarationDiagnostics(items []diagnostic.Diagnostic, pre *preprocess.Result) []diagnostic.Diagnostic {
+func hasRedeclarationDiagnostics(table *symbol.Table) bool {
+	if table == nil {
+		return false
+	}
+	for _, item := range table.Diagnostics {
+		if item.Code == "pawn-analysis:symbol/redeclared" {
+			return true
+		}
+	}
+	return false
+}
+
+func removeMacroDeclarationDiagnostics(
+	items []diagnostic.Diagnostic,
+	invocations []preprocess.ByteRange,
+) []diagnostic.Diagnostic {
 	result := items[:0]
 	for _, item := range items {
-		if item.Code != "pawn-analysis:symbol/redeclared" || !insideMacroInvocation(item.Primary, pre) {
+		if item.Code != "pawn-analysis:symbol/redeclared" || !insideMacroInvocation(item.Primary, invocations) {
 			result = append(result, item)
 		}
 	}
 	return result
 }
 
-func insideMacroInvocation(span source.Span, pre *preprocess.Result) bool {
+func macroInvocationRanges(pre *preprocess.Result) []preprocess.ByteRange {
+	if pre == nil {
+		return nil
+	}
+	unique := make(map[preprocess.ByteRange]struct{})
 	for _, item := range pre.ExpandedTokens {
 		for origin := item.Origin; origin != nil; origin = origin.Parent {
 			candidate := origin.Span
-			if origin.Macro != "" && candidate.File == 0 && int(span.Start) >= candidate.Start.Offset && int(span.End) <= candidate.End.Offset {
-				return true
+			if origin.Macro != "" && candidate.File == 0 {
+				unique[preprocess.ByteRange{Start: candidate.Start.Offset, End: candidate.End.Offset}] = struct{}{}
 			}
 		}
+	}
+	ranges := make([]preprocess.ByteRange, 0, len(unique))
+	for item := range unique {
+		ranges = append(ranges, item)
+	}
+	sort.Slice(ranges, func(i, j int) bool {
+		if ranges[i].Start != ranges[j].Start {
+			return ranges[i].Start < ranges[j].Start
+		}
+		return ranges[i].End < ranges[j].End
+	})
+	merged := ranges[:0]
+	for _, item := range ranges {
+		if len(merged) == 0 || item.Start > merged[len(merged)-1].End {
+			merged = append(merged, item)
+			continue
+		}
+		merged[len(merged)-1].End = max(merged[len(merged)-1].End, item.End)
+	}
+	return merged
+}
+
+func insideMacroInvocation(span source.Span, ranges []preprocess.ByteRange) bool {
+	start, end := int(span.Start), int(span.End)
+	index := sort.Search(len(ranges), func(i int) bool { return ranges[i].Start > start })
+	if index == 0 {
+		return false
+	}
+	candidate := ranges[index-1]
+	if start >= candidate.Start && end <= candidate.End {
+		return true
 	}
 	return false
 }

@@ -369,3 +369,26 @@ func TestBuildContextStopsDuringTraversal(t *testing.T) {
 		t.Fatal("cancelled symbol construction returned a table")
 	}
 }
+
+func TestBuildMappedDeclarationsSkipsFunctionBodies(t *testing.T) {
+	file := parser.ParseCompact(
+		[]byte("stock Helper(value) { new local = value; return local; }\n"),
+		parser.ParseOptions{},
+	)
+	table, err := symbol.BuildMappedDeclarationsContext(
+		context.Background(), file.Syntax(), source.FileID(1), nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	helper, ok := findSymbol(table, "Helper")
+	if !ok || helper.MinArgs != 1 || helper.MaxArgs != 1 {
+		t.Fatalf("Helper = %+v, found = %v", helper, ok)
+	}
+	if _, found := findSymbol(table, "local"); found {
+		t.Fatal("local symbol included in declaration-only table")
+	}
+	if len(table.References) != 0 {
+		t.Fatalf("references = %d, want 0", len(table.References))
+	}
+}

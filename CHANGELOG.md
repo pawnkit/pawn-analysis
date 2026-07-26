@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.14.0 - 2026-07-26
+
+### Performance
+
+- Build only top-level declarations for expanded include graphs.
+- Index macro invocation ranges once when filtering redeclarations.
+
 ## 0.13.1 - 2026-07-26
 
 ### Performance

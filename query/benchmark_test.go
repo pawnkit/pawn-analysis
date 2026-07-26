@@ -149,7 +149,7 @@ func BenchmarkIncrementalTriviaAnalysis(b *testing.B) {
 	edit := len(text) - len("a\n")
 	snapshot := New(Document{URI: uri, Text: text, Version: 1})
 	previous, err := snapshot.Analyze(
-		context.Background(), uri, analysis.Options{RetainExpanded: true},
+		context.Background(), uri, analysis.Options{RetainExpanded: true, Revision: "project:1"},
 	)
 	if err != nil {
 		b.Fatal(err)
@@ -168,7 +168,7 @@ func BenchmarkIncrementalTriviaAnalysis(b *testing.B) {
 		b.StartTimer()
 
 		result, err := next.Analyze(
-			context.Background(), uri, analysis.Options{RetainExpanded: true},
+			context.Background(), uri, analysis.Options{RetainExpanded: true, Revision: "project:1"},
 		)
 		if err != nil {
 			b.Fatal(err)

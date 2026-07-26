@@ -181,17 +181,20 @@ func TestAnalyzeTracksUnchangedDeclarations(t *testing.T) {
 func TestAnalyzeReusesExpandedViewForEquivalentTriviaEdit(t *testing.T) {
 	before := analysis.Analyze(
 		[]byte("stock Work() { return 1; } // old\n"),
-		analysis.Options{RetainExpanded: true},
+		analysis.Options{RetainExpanded: true, Revision: "project:1"},
 	)
-	var reusedParse, reusedSymbols int
+	var reusedPreprocess, reusedParse, reusedSymbols int
 	after, err := analysis.AnalyzeContext(
 		context.Background(),
 		[]byte("stock Work() { return 1; } // new\n"),
 		analysis.Options{
 			RetainExpanded: true,
 			Previous:       before,
+			Revision:       "project:1",
 			Trace: func(event analysis.TraceEvent) {
 				switch event.Stage {
+				case analysis.StagePreprocess:
+					reusedPreprocess = event.Reused
 				case analysis.StageParseExpanded:
 					reusedParse = event.Reused
 				case analysis.StageSymbolsExpanded:
@@ -206,8 +209,11 @@ func TestAnalyzeReusesExpandedViewForEquivalentTriviaEdit(t *testing.T) {
 	if after.ExpandedParse != before.ExpandedParse || after.ExpandedSymbols != before.ExpandedSymbols {
 		t.Fatal("expanded view was rebuilt")
 	}
-	if reusedParse != 1 || reusedSymbols != 1 {
-		t.Fatalf("reuse trace = parse %d, symbols %d", reusedParse, reusedSymbols)
+	if reusedPreprocess != 1 || reusedParse != 1 || reusedSymbols != 1 {
+		t.Fatalf(
+			"reuse trace = preprocess %d, parse %d, symbols %d",
+			reusedPreprocess, reusedParse, reusedSymbols,
+		)
 	}
 }
 

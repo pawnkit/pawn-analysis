@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.15.0 - 2026-07-26
+
+### Performance
+
+- Reuse preprocessing when an edit changes only fixed-position trivia.
+
 ## 0.14.2 - 2026-07-26
 
 ### Performance

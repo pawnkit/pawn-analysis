@@ -55,6 +55,7 @@ type Result struct {
 	baseDiagnostics []diagnostic.Diagnostic
 	flowCache       *sema.FlowCache
 	tagCache        *sema.TagCache
+	revision        string
 }
 
 // Analyze runs the shared per-file pipeline.
@@ -77,14 +78,28 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 	fileID := registry.Intern(uri)
 
 	stage := beginStage(opts.Trace, StagePreprocess)
-	pre, err := preprocess.RunContext(ctx, text, preprocess.Options{
-		URI:             uri.String(),
-		Resolver:        opts.Includes,
-		Predefined:      opts.Predefined,
-		MaxOutputTokens: opts.MaxOutputTokens,
-		TokenCache:      opts.TokenCache,
-	})
-	stage.end(ctx, 0)
+	var pre *preprocess.Result
+	var err error
+	reusedPreprocess := false
+	if opts.Previous != nil && opts.Revision != "" && opts.Previous.revision == opts.Revision {
+		pre, reusedPreprocess, err = preprocess.ReuseTriviaContext(
+			ctx, text, uri.String(), opts.TokenCache, opts.Previous.Preprocess,
+		)
+	}
+	if err == nil && !reusedPreprocess {
+		pre, err = preprocess.RunContext(ctx, text, preprocess.Options{
+			URI:             uri.String(),
+			Resolver:        opts.Includes,
+			Predefined:      opts.Predefined,
+			MaxOutputTokens: opts.MaxOutputTokens,
+			TokenCache:      opts.TokenCache,
+		})
+	}
+	if reusedPreprocess {
+		stage.end(ctx, 1)
+	} else {
+		stage.end(ctx, 0)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -209,6 +224,7 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		File: fileID, Registry: registry, Preprocess: pre, Parse: parsed, ExpandedParse: expanded,
 		Declarations: declarations, Symbols: table, ExpandedSymbols: expandedTable,
 		Diagnostics: diagnostics, baseDiagnostics: diagnostics,
+		revision: opts.Revision,
 	}
 	prepared.Reuse.Declarations = reusedDeclarationCount
 	if opts.SkipSemantics {

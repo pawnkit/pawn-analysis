@@ -97,6 +97,37 @@ func TestCleanAndIncrementalWorkspaceAnalysisAgree(t *testing.T) {
 	}
 }
 
+func TestTriviaReuseMatchesCleanAnalysis(t *testing.T) {
+	uri := source.FileURI("main.pwn")
+	initial := []byte("stock Work() { return 1; } // old\n")
+	final := []byte("stock Work() { return 1; } // new\n")
+	opts := analysis.Options{
+		RetainExpanded: true,
+		Names:          sema.MapResolver{},
+		Revision:       "project:1",
+	}
+
+	incremental := New(Document{URI: uri, Text: initial, Version: 1})
+	if _, err := incremental.Analyze(context.Background(), uri, opts); err != nil {
+		t.Fatal(err)
+	}
+	incremental, ok := incremental.Update(Document{URI: uri, Text: final, Version: 2})
+	if !ok {
+		t.Fatal("update rejected")
+	}
+	got, err := incremental.Analyze(context.Background(), uri, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := New(Document{URI: uri, Text: final, Version: 2}).Analyze(
+		context.Background(), uri, opts,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertAnalysisEqual(t, got, want)
+}
+
 func TestResolverRevisionMatchesCleanAnalysis(t *testing.T) {
 	uri := source.FileURI("main.pwn")
 	text := []byte("#include <value>\nmain() { return IncludedValue(); }\n")
@@ -278,9 +309,10 @@ func FuzzPersistentSnapshotMatchesCleanAnalysis(f *testing.F) {
 			operations = operations[:48]
 		}
 		uri := source.FileURI("fuzz.pwn")
+		opts := analysis.Options{Revision: "project:1"}
 		buffer := source.NewTextBuffer([]byte("stock Add(value) { return value + 1; }\nmain() { return Add(2); }\n"))
 		snapshot := New(Document{URI: uri, Buffer: buffer, Version: 1})
-		if _, err := snapshot.Analyze(context.Background(), uri, analysis.Options{}); err != nil {
+		if _, err := snapshot.Analyze(context.Background(), uri, opts); err != nil {
 			t.Fatal(err)
 		}
 
@@ -312,12 +344,12 @@ func FuzzPersistentSnapshotMatchesCleanAnalysis(f *testing.F) {
 			if !accepted {
 				t.Fatal("snapshot rejected a new revision")
 			}
-			got, err := next.Analyze(context.Background(), uri, analysis.Options{})
+			got, err := next.Analyze(context.Background(), uri, opts)
 			if err != nil {
 				t.Fatal(err)
 			}
 			want, err := New(Document{URI: uri, Buffer: buffer, Version: version}).Analyze(
-				context.Background(), uri, analysis.Options{},
+				context.Background(), uri, opts,
 			)
 			if err != nil {
 				t.Fatal(err)

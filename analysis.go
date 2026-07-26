@@ -86,6 +86,9 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 	if err != nil {
 		return nil, err
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	fileIDs := make([]source.FileID, len(pre.Files))
 	for i, file := range pre.Files {
 		fileURI := source.URI(file.URI)
@@ -224,8 +227,11 @@ func CompleteContext(ctx context.Context, prepared *Result, opts Options) (*Resu
 	}
 	resolver := newNameResolver(prepared.Preprocess.Macros, prepared.ExpandedSymbols, opts.Names)
 	stage := beginStage(opts.Trace, StageSemanticNames)
-	semantics := sema.CheckNames(prepared.Symbols, resolver)
+	semantics, err := sema.CheckNamesContext(ctx, prepared.Symbols, resolver)
 	stage.end(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -234,10 +240,14 @@ func CompleteContext(ctx context.Context, prepared *Result, opts Options) (*Resu
 		previousTags = opts.Previous.tagCache
 	}
 	stage = beginStage(opts.Trace, StageSemanticTags)
-	tagDiagnostics, tagCache, reusedTags := sema.CheckTagsCached(
+	tagDiagnostics, tagCache, reusedTags, err := sema.CheckTagsCachedContext(
+		ctx,
 		prepared.Parse.Syntax(), prepared.Symbols, resolver, previousTags, opts.Revision,
 	)
 	stage.end(ctx, reusedTags)
+	if err != nil {
+		return nil, err
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

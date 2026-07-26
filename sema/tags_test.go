@@ -1,10 +1,31 @@
 package sema_test
 
 import (
+	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/pawnkit/pawn-analysis/sema"
 )
+
+func TestCheckTagsContextStopsDuringTraversal(t *testing.T) {
+	text := "main() { new Float:value; new bool:other;" +
+		strings.Repeat("value = other;", 2_000) + "}"
+	file := parseCompact(t, text)
+	table := tableFor(t, text)
+	ctx := &delayedCancelContext{after: 1}
+
+	diagnostics, cache, reused, err := sema.CheckTagsCachedContext(
+		ctx, file.Syntax(), table, nil, nil, "",
+	)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled", err)
+	}
+	if diagnostics != nil || cache != nil || reused != 0 {
+		t.Fatal("cancelled tag checking returned partial results")
+	}
+}
 
 func TestTagMismatchChecks(t *testing.T) {
 	tests := []struct {

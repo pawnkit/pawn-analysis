@@ -1,6 +1,7 @@
 package sema
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"strings"
@@ -41,13 +42,53 @@ func CheckTagsCached(
 	previous *TagCache,
 	revision string,
 ) ([]diagnostic.Diagnostic, *TagCache, int) {
-	if !root.Valid() || table == nil {
-		return nil, &TagCache{entries: make(map[symbol.StableID]cachedTags)}, 0
+	diagnostics, cache, reused, _ := checkTagsCached(
+		context.Background(), false, root, table, resolver, previous, revision,
+	)
+	return diagnostics, cache, reused
+}
+
+// CheckTagsCachedContext reuses tag checks and stops when ctx is cancelled.
+func CheckTagsCachedContext(
+	ctx context.Context,
+	root parser.SyntaxNode,
+	table *symbol.Table,
+	resolver Resolver,
+	previous *TagCache,
+	revision string,
+) ([]diagnostic.Diagnostic, *TagCache, int, error) {
+	return checkTagsCached(ctx, true, root, table, resolver, previous, revision)
+}
+
+func checkTagsCached(
+	ctx context.Context,
+	cancellable bool,
+	root parser.SyntaxNode,
+	table *symbol.Table,
+	resolver Resolver,
+	previous *TagCache,
+	revision string,
+) ([]diagnostic.Diagnostic, *TagCache, int, error) {
+	cancel := cancellation{ctx: ctx, cancellable: cancellable}
+	if cancellable {
+		if err := ctx.Err(); err != nil {
+			return nil, nil, 0, err
+		}
 	}
-	if !hasCacheableTagFunction(root) {
-		checker := tagChecker{table: table, resolver: resolver}
+	if !root.Valid() || table == nil {
+		return nil, &TagCache{entries: make(map[symbol.StableID]cachedTags)}, 0, nil
+	}
+	cacheable, err := hasCacheableTagFunction(root, &cancel)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	if !cacheable {
+		checker := tagChecker{table: table, resolver: resolver, cancel: &cancel}
 		checker.walk(root, "")
-		return checker.diagnostics, &TagCache{entries: make(map[symbol.StableID]cachedTags)}, 0
+		if cancel.err != nil {
+			return nil, nil, 0, cancel.err
+		}
+		return checker.diagnostics, &TagCache{entries: make(map[symbol.StableID]cachedTags)}, 0, nil
 	}
 	exports := table.ExportFingerprint()
 	revisionHash := sha256.Sum256([]byte(revision))
@@ -56,10 +97,13 @@ func CheckTagsCached(
 		entries: make(map[symbol.StableID]cachedTags),
 	}
 	canReuse := previous != nil && previous.exports == exports && previous.revision == revisionHash
-	checker := tagChecker{table: table, resolver: resolver}
+	checker := tagChecker{table: table, resolver: resolver, cancel: &cancel}
 	reused := 0
 	declarations := root.Declarations()
 	for declarations.Next() {
+		if cancel.poll() {
+			return nil, nil, 0, cancel.err
+		}
 		declaration := declarations.Declaration()
 		if declaration.Kind() != parser.KindFunctionDefinition {
 			checker.walk(declaration, "")
@@ -94,6 +138,9 @@ func CheckTagsCached(
 		}
 		firstDiagnostic := len(checker.diagnostics)
 		checker.walk(declaration, "")
+		if cancel.err != nil {
+			return nil, nil, 0, cancel.err
+		}
 		if cacheable {
 			next.entries[stableID] = cachedTags{
 				body: bodyHash, start: callable.Span.Start,
@@ -101,18 +148,21 @@ func CheckTagsCached(
 			}
 		}
 	}
-	return checker.diagnostics, next, reused
+	return checker.diagnostics, next, reused, nil
 }
 
-func hasCacheableTagFunction(root parser.SyntaxNode) bool {
+func hasCacheableTagFunction(root parser.SyntaxNode, cancel *cancellation) (bool, error) {
 	declarations := root.Declarations()
 	for declarations.Next() {
+		if cancel.poll() {
+			return false, cancel.err
+		}
 		declaration := declarations.Declaration()
 		if declaration.Kind() == parser.KindFunctionDefinition && len(declaration.Bytes()) >= tagCacheMinimumBytes {
-			return true
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
 func shiftTagDiagnostics(items []diagnostic.Diagnostic, file source.FileID, delta source.Offset) []diagnostic.Diagnostic {
@@ -138,10 +188,11 @@ type tagChecker struct {
 	table       *symbol.Table
 	resolver    Resolver
 	diagnostics []diagnostic.Diagnostic
+	cancel      *cancellation
 }
 
 func (c *tagChecker) walk(node parser.SyntaxNode, returnTag string) {
-	if !node.Valid() {
+	if !node.Valid() || c.cancel != nil && (c.cancel.err != nil || c.cancel.poll()) {
 		return
 	}
 	switch node.Kind() {

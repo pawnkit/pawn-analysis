@@ -1,13 +1,33 @@
 package sema_test
 
 import (
+	"context"
+	"errors"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/pawnkit/pawn-analysis/sema"
 	"github.com/pawnkit/pawn-analysis/symbol"
 	parser "github.com/pawnkit/pawn-parser"
 	"github.com/pawnkit/pawnkit-core/source"
 )
+
+type delayedCancelContext struct {
+	checks atomic.Int32
+	after  int32
+}
+
+func (c *delayedCancelContext) Deadline() (time.Time, bool) { return time.Time{}, false }
+func (c *delayedCancelContext) Done() <-chan struct{}       { return nil }
+func (c *delayedCancelContext) Value(any) any               { return nil }
+func (c *delayedCancelContext) Err() error {
+	if c.checks.Add(1) > c.after {
+		return context.Canceled
+	}
+	return nil
+}
 
 func tableFor(t *testing.T, text string) *symbol.Table {
 	t.Helper()
@@ -16,6 +36,19 @@ func tableFor(t *testing.T, text string) *symbol.Table {
 		t.Fatal("parser returned nil")
 	}
 	return symbol.Build(file.Syntax(), source.FileID(1))
+}
+
+func TestCheckNamesContextStopsDuringResolution(t *testing.T) {
+	table := tableFor(t, "main() {"+strings.Repeat("Missing();", 2_000)+"}")
+	ctx := &delayedCancelContext{after: 1}
+
+	result, err := sema.CheckNamesContext(ctx, table, nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled", err)
+	}
+	if len(result.Diagnostics) != 0 || len(result.Unknown) != 0 {
+		t.Fatal("cancelled name resolution returned partial results")
+	}
 }
 
 func parseCompact(t *testing.T, text string) *parser.CompactFile {

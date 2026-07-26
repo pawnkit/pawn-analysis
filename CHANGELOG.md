@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.0 - 2026-07-26
+
+### Added
+
+- Allow name resolution and tag checking to stop during cancellation.
+
 ## 0.11.0 - 2026-07-26
 
 ### Added

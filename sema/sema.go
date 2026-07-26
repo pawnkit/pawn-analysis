@@ -2,6 +2,7 @@
 package sema
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/pawnkit/pawn-analysis/symbol"
@@ -43,12 +44,31 @@ type Result struct {
 
 // CheckNames classifies references unresolved by the local symbol table.
 func CheckNames(table *symbol.Table, resolver Resolver) Result {
+	result, _ := checkNames(context.Background(), false, table, resolver)
+	return result
+}
+
+// CheckNamesContext classifies names and stops when ctx is cancelled.
+func CheckNamesContext(ctx context.Context, table *symbol.Table, resolver Resolver) (Result, error) {
+	return checkNames(ctx, true, table, resolver)
+}
+
+func checkNames(ctx context.Context, cancellable bool, table *symbol.Table, resolver Resolver) (Result, error) {
 	var result Result
+	if cancellable {
+		if err := ctx.Err(); err != nil {
+			return result, err
+		}
+	}
 	if table == nil {
-		return result
+		return result, nil
 	}
 
+	cancel := cancellation{ctx: ctx, cancellable: cancellable}
 	for _, ref := range table.References {
+		if cancel.poll() {
+			return Result{}, cancel.err
+		}
 		if ref.Resolved != 0 {
 			resolved, ok := table.Symbol(ref.Resolved)
 			if ref.IsCall && ok && !resolved.Kind.IsCallable() {
@@ -94,7 +114,7 @@ func CheckNames(table *symbol.Table, resolver Resolver) Result {
 			result.Unknown = append(result.Unknown, ref)
 		}
 	}
-	return result
+	return result, nil
 }
 
 func checkExternalArity(result *Result, resolver Resolver, ref symbol.Reference) {

@@ -1,6 +1,7 @@
 package sema
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"strings"
 
@@ -8,16 +9,114 @@ import (
 	parser "github.com/pawnkit/pawn-parser"
 	"github.com/pawnkit/pawn-parser/token"
 	"github.com/pawnkit/pawnkit-core/diagnostic"
+	"github.com/pawnkit/pawnkit-core/source"
 )
+
+// TagCache stores immutable function results between document revisions.
+type TagCache struct {
+	exports  [32]byte
+	revision [32]byte
+	entries  map[symbol.StableID]cachedTags
+}
+
+type cachedTags struct {
+	body        [32]byte
+	start       source.Offset
+	diagnostics []diagnostic.Diagnostic
+}
 
 // CheckTags reports confirmed assignment and return tag mismatches.
 func CheckTags(root parser.SyntaxNode, table *symbol.Table, resolver Resolver) []diagnostic.Diagnostic {
+	diagnostics, _, _ := CheckTagsCached(root, table, resolver, nil, "")
+	return diagnostics
+}
+
+// CheckTagsCached reuses tag checks for unchanged functions.
+func CheckTagsCached(
+	root parser.SyntaxNode,
+	table *symbol.Table,
+	resolver Resolver,
+	previous *TagCache,
+	revision string,
+) ([]diagnostic.Diagnostic, *TagCache, int) {
 	if !root.Valid() || table == nil {
+		return nil, &TagCache{entries: make(map[symbol.StableID]cachedTags)}, 0
+	}
+	exports := table.ExportFingerprint()
+	revisionHash := sha256.Sum256([]byte(revision))
+	next := &TagCache{
+		exports: exports, revision: revisionHash,
+		entries: make(map[symbol.StableID]cachedTags),
+	}
+	canReuse := previous != nil && previous.exports == exports && previous.revision == revisionHash
+	var diagnostics []diagnostic.Diagnostic
+	reused := 0
+	declarations := root.Declarations()
+	for declarations.Next() {
+		declaration := declarations.Declaration()
+		if declaration.Kind() != parser.KindFunctionDefinition {
+			c := tagChecker{table: table, resolver: resolver}
+			c.walk(declaration, "")
+			diagnostics = append(diagnostics, c.diagnostics...)
+			continue
+		}
+		name, ok := declaration.Field("name")
+		if !ok {
+			c := tagChecker{table: table, resolver: resolver}
+			c.walk(declaration, "")
+			diagnostics = append(diagnostics, c.diagnostics...)
+			continue
+		}
+		callable, ok := declaredSymbol(table, name)
+		if !ok {
+			c := tagChecker{table: table, resolver: resolver}
+			c.walk(declaration, "")
+			diagnostics = append(diagnostics, c.diagnostics...)
+			continue
+		}
+		stableID, stable := table.StableSymbolID(callable.ID)
+		bodyHash := sha256.Sum256(declaration.Bytes())
+		if canReuse && stable {
+			if cached, found := previous.entries[stableID]; found && cached.body == bodyHash {
+				items := shiftTagDiagnostics(cached.diagnostics, table.File, callable.Span.Start-cached.start)
+				diagnostics = append(diagnostics, items...)
+				next.entries[stableID] = cachedTags{
+					body: bodyHash, start: callable.Span.Start, diagnostics: items,
+				}
+				reused++
+				continue
+			}
+		}
+		c := tagChecker{table: table, resolver: resolver}
+		c.walk(declaration, "")
+		diagnostics = append(diagnostics, c.diagnostics...)
+		if stable {
+			next.entries[stableID] = cachedTags{
+				body: bodyHash, start: callable.Span.Start,
+				diagnostics: append([]diagnostic.Diagnostic(nil), c.diagnostics...),
+			}
+		}
+	}
+	return diagnostics, next, reused
+}
+
+func shiftTagDiagnostics(items []diagnostic.Diagnostic, file source.FileID, delta source.Offset) []diagnostic.Diagnostic {
+	if len(items) == 0 {
 		return nil
 	}
-	c := tagChecker{table: table, resolver: resolver}
-	c.walk(root, "")
-	return c.diagnostics
+	result := append([]diagnostic.Diagnostic(nil), items...)
+	for i := range result {
+		result[i].Primary.File = file
+		result[i].Primary.Start += delta
+		result[i].Primary.End += delta
+		result[i].Related = append([]diagnostic.RelatedLocation(nil), result[i].Related...)
+		for j := range result[i].Related {
+			result[i].Related[j].Span.File = file
+			result[i].Related[j].Span.Start += delta
+			result[i].Related[j].Span.End += delta
+		}
+	}
+	return result
 }
 
 type tagChecker struct {

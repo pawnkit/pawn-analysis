@@ -77,13 +77,13 @@ func TestSnapshotUpdateInvalidatesChangedDocument(t *testing.T) {
 
 func TestSnapshotReusesUnchangedFunctionControlFlow(t *testing.T) {
 	uri := source.FileURI("main.pwn")
-	firstText := []byte("stock First() { return 1; }\nstock Second(value) { new result = value; if (result > 0) result--; while (result > 1) result--; return result; }\n")
+	firstText := []byte("stock First() { return 1; }\nstock Second(value) { new Float:mismatch = 1; new result = value; if (result > 0) result--; while (result > 1) result--; return result; }\n")
 	snapshot := New(Document{URI: uri, Text: firstText, Version: 1})
 	if _, err := snapshot.Analyze(context.Background(), uri, analysis.Options{}); err != nil {
 		t.Fatal(err)
 	}
 
-	secondText := []byte("stock First() { new value = 1; return value; }\nstock Second(value) { new result = value; if (result > 0) result--; while (result > 1) result--; return result; }\n")
+	secondText := []byte("stock First() { new value = 1; return value; }\nstock Second(value) { new Float:mismatch = 1; new result = value; if (result > 0) result--; while (result > 1) result--; return result; }\n")
 	next, ok := snapshot.Update(Document{URI: uri, Text: secondText, Version: 2})
 	if !ok {
 		t.Fatal("update rejected")
@@ -94,6 +94,9 @@ func TestSnapshotReusesUnchangedFunctionControlFlow(t *testing.T) {
 	}
 	if got.Reuse.ControlFlow != 1 {
 		t.Fatalf("reused CFGs = %d, want 1", got.Reuse.ControlFlow)
+	}
+	if got.Reuse.Tags != 1 {
+		t.Fatalf("reused tag checks = %d, want 1", got.Reuse.Tags)
 	}
 
 	clean, err := New(Document{URI: uri, Text: secondText, Version: 2}).Analyze(
@@ -107,6 +110,27 @@ func TestSnapshotReusesUnchangedFunctionControlFlow(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got.ControlFlow, clean.ControlFlow) {
 		t.Fatal("reused control flow differs from clean analysis")
+	}
+}
+
+func TestSnapshotInvalidatesTagChecksWhenExportsChange(t *testing.T) {
+	uri := source.FileURI("main.pwn")
+	firstText := []byte("new Float:Value;\nstock Use() { new result = Value; return result; }\n")
+	snapshot := New(Document{URI: uri, Text: firstText, Version: 1})
+	if _, err := snapshot.Analyze(context.Background(), uri, analysis.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	secondText := []byte("new Value;\nstock Use() { new result = Value; return result; }\n")
+	next, ok := snapshot.Update(Document{URI: uri, Text: secondText, Version: 2})
+	if !ok {
+		t.Fatal("update rejected")
+	}
+	result, err := next.Analyze(context.Background(), uri, analysis.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Reuse.Tags != 0 {
+		t.Fatalf("reused tag checks = %d after export change", result.Reuse.Tags)
 	}
 }
 

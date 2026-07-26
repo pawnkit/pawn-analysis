@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.0 - 2026-07-26
+
+### Added
+
+- Reused tag checks for unchanged functions when exports and resolver data are
+  unchanged.
+
+### Performance
+
+- Reduced the large incremental-analysis benchmark from about 320,000
+  allocations to 250,000.
+
 ## 0.4.3 - 2026-07-26
 
 ### Fixed

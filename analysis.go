@@ -29,6 +29,7 @@ type Options struct {
 
 type ReuseStats struct {
 	ControlFlow int
+	Tags        int
 }
 
 // Result is one immutable file analysis.
@@ -46,6 +47,7 @@ type Result struct {
 	Reuse           ReuseStats
 	baseDiagnostics []diagnostic.Diagnostic
 	flowCache       *sema.FlowCache
+	tagCache        *sema.TagCache
 }
 
 // Analyze runs the shared per-file pipeline.
@@ -137,7 +139,14 @@ func CompleteContext(ctx context.Context, prepared *Result, opts Options) (*Resu
 	}
 	resolver := newNameResolver(prepared.Preprocess.Macros, prepared.ExpandedSymbols, opts.Names)
 	semantics := sema.CheckNames(prepared.Symbols, resolver)
-	semantics.Diagnostics = append(semantics.Diagnostics, sema.CheckTags(prepared.Parse.Syntax(), prepared.Symbols, resolver)...)
+	var previousTags *sema.TagCache
+	if opts.Previous != nil {
+		previousTags = opts.Previous.tagCache
+	}
+	tagDiagnostics, tagCache, reusedTags := sema.CheckTagsCached(
+		prepared.Parse.Syntax(), prepared.Symbols, resolver, previousTags, opts.Revision,
+	)
+	semantics.Diagnostics = append(semantics.Diagnostics, tagDiagnostics...)
 	semantics.Diagnostics = append(semantics.Diagnostics, sema.CheckStates(prepared.Parse.Syntax(), prepared.File)...)
 	semantics.Diagnostics = append(semantics.Diagnostics, sema.CheckConstantOrder(prepared.Parse.Syntax(), prepared.Symbols)...)
 	var previousFlow *sema.FlowCache
@@ -156,7 +165,9 @@ func CompleteContext(ctx context.Context, prepared *Result, opts Options) (*Resu
 	result.Semantics = semantics
 	result.ControlFlow = flows
 	result.Reuse.ControlFlow = reused
+	result.Reuse.Tags = reusedTags
 	result.flowCache = flowCache
+	result.tagCache = tagCache
 	result.Diagnostics = append(append([]diagnostic.Diagnostic(nil), prepared.baseDiagnostics...), semantics.Diagnostics...)
 	addDiagnosticDocs(result.Diagnostics)
 	return retainExpanded(&result, opts.RetainExpanded), nil

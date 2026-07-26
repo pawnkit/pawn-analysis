@@ -134,6 +134,9 @@ func BenchmarkIncrementalFunctionAnalysis(b *testing.B) {
 		if result.Reuse.ControlFlow < functions-10 {
 			b.Fatalf("reused CFGs = %d, want at least %d", result.Reuse.ControlFlow, functions-10)
 		}
+		if result.Reuse.Tags < functions-10 {
+			b.Fatalf("reused tag checks = %d, want at least %d", result.Reuse.Tags, functions-10)
+		}
 		snapshot = next
 		text = nextText
 	}

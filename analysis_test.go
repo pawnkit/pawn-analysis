@@ -178,6 +178,53 @@ func TestAnalyzeTracksUnchangedDeclarations(t *testing.T) {
 	}
 }
 
+func TestAnalyzeReusesExpandedViewForEquivalentTriviaEdit(t *testing.T) {
+	before := analysis.Analyze(
+		[]byte("stock Work() { return 1; } // old\n"),
+		analysis.Options{RetainExpanded: true},
+	)
+	var reusedParse, reusedSymbols int
+	after, err := analysis.AnalyzeContext(
+		context.Background(),
+		[]byte("stock Work() { return 1; } // new\n"),
+		analysis.Options{
+			RetainExpanded: true,
+			Previous:       before,
+			Trace: func(event analysis.TraceEvent) {
+				switch event.Stage {
+				case analysis.StageParseExpanded:
+					reusedParse = event.Reused
+				case analysis.StageSymbolsExpanded:
+					reusedSymbols = event.Reused
+				}
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.ExpandedParse != before.ExpandedParse || after.ExpandedSymbols != before.ExpandedSymbols {
+		t.Fatal("expanded view was rebuilt")
+	}
+	if reusedParse != 1 || reusedSymbols != 1 {
+		t.Fatalf("reuse trace = parse %d, symbols %d", reusedParse, reusedSymbols)
+	}
+}
+
+func TestAnalyzeRebuildsExpandedViewWhenTriviaMovesTokens(t *testing.T) {
+	before := analysis.Analyze(
+		[]byte("stock  Work() { return 1; }\n"),
+		analysis.Options{RetainExpanded: true},
+	)
+	after := analysis.Analyze(
+		[]byte("stock Work()  { return 1; }\n"),
+		analysis.Options{RetainExpanded: true, Previous: before},
+	)
+	if after.ExpandedParse == before.ExpandedParse || after.ExpandedSymbols == before.ExpandedSymbols {
+		t.Fatal("expanded view reused with changed token origins")
+	}
+}
+
 func TestAnalyzeDoesNotReuseMalformedDeclarations(t *testing.T) {
 	before := analysis.Analyze([]byte("stock Keep() {}\n"), analysis.Options{})
 	after := analysis.Analyze([]byte("stock Broken( {\n"), analysis.Options{Previous: before})

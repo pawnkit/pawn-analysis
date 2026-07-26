@@ -12,6 +12,7 @@ import (
 	"github.com/pawnkit/pawn-analysis/sema"
 	"github.com/pawnkit/pawn-analysis/symbol"
 	parser "github.com/pawnkit/pawn-parser"
+	"github.com/pawnkit/pawn-parser/token"
 	"github.com/pawnkit/pawnkit-core/diagnostic"
 	"github.com/pawnkit/pawnkit-core/source"
 )
@@ -110,6 +111,11 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 	var expanded *parser.CompactFile
 	var expandedErr error
 	var expandedTable *symbol.Table
+	reusedExpanded := reusableExpanded(pre, opts.Previous)
+	if reusedExpanded {
+		expanded = opts.Previous.ExpandedParse
+		expandedTable = opts.Previous.ExpandedSymbols
+	}
 	parseOriginal := func() {
 		current := beginStage(opts.Trace, StageParseOriginal)
 		parsed, parsedErr = parser.ParseTokensCompactContext(ctx, text, pre.OriginalTokens, parser.ParseOptions{})
@@ -117,6 +123,10 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 	}
 	parseExpanded := func() {
 		current := beginStage(opts.Trace, StageParseExpanded)
+		if reusedExpanded {
+			current.end(ctx, 1)
+			return
+		}
 		expanded, expandedErr = parser.ParseTokensCompactContext(
 			ctx, pre.ExpandedSource, pre.ExpandedTokens, parser.ParseOptions{},
 		)
@@ -157,12 +167,16 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 	}
 	if needsExpanded {
 		stage = beginStage(opts.Trace, StageSymbolsExpanded)
-		expandedTable, err = symbol.BuildMappedNavigationContext(ctx, expanded.Syntax(), fileID, mapFile)
-		if err != nil {
+		if reusedExpanded {
+			stage.end(ctx, 1)
+		} else {
+			expandedTable, err = symbol.BuildMappedNavigationContext(ctx, expanded.Syntax(), fileID, mapFile)
+			if err != nil {
+				stage.end(ctx, 0)
+				return nil, err
+			}
 			stage.end(ctx, 0)
-			return nil, err
 		}
-		stage.end(ctx, 0)
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -201,6 +215,49 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		return retainExpanded(prepared, opts.RetainExpanded), nil
 	}
 	return CompleteContext(ctx, prepared, opts)
+}
+
+func reusableExpanded(current *preprocess.Result, previous *Result) bool {
+	if current == nil || previous == nil || previous.Preprocess == nil ||
+		previous.ExpandedParse == nil || previous.ExpandedSymbols == nil {
+		return false
+	}
+	before := previous.Preprocess
+	if len(current.ExpandedSource) != len(before.ExpandedSource) ||
+		len(current.ExpandedTokens) != len(before.ExpandedTokens) ||
+		len(current.Files) != len(before.Files) {
+		return false
+	}
+	for i := range current.Files {
+		if current.Files[i].URI != before.Files[i].URI {
+			return false
+		}
+	}
+	for i := range current.ExpandedSource {
+		if current.ExpandedSource[i] != before.ExpandedSource[i] {
+			return false
+		}
+	}
+	for i := range current.ExpandedTokens {
+		if !sameExpandedToken(current.ExpandedTokens[i], before.ExpandedTokens[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func sameExpandedToken(left, right token.Token) bool {
+	if left.Kind != right.Kind || left.Start != right.Start || left.End != right.End {
+		return false
+	}
+	for left.Origin != nil && right.Origin != nil {
+		if left.Origin.Span != right.Origin.Span || left.Origin.Macro != right.Origin.Macro {
+			return false
+		}
+		left.Origin = left.Origin.Parent
+		right.Origin = right.Origin.Parent
+	}
+	return left.Origin == nil && right.Origin == nil
 }
 
 func reusedDeclarations(previous, current parser.DeclarationIndex) int {

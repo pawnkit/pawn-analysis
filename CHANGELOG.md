@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.14.2 - 2026-07-26
+
+### Performance
+
+- Reuse expanded parsing and symbols when an edit leaves tokens and origins unchanged.
+
 ## 0.14.1 - 2026-07-26
 
 ### Fixed

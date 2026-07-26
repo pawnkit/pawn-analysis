@@ -142,6 +142,44 @@ func BenchmarkIncrementalFunctionAnalysis(b *testing.B) {
 	}
 }
 
+func BenchmarkIncrementalTriviaAnalysis(b *testing.B) {
+	const functions = 2000
+	uri := source.FileURI("gamemode.pwn")
+	text := append(syntheticGlobalGamemode(functions), []byte("// revision a\n")...)
+	edit := len(text) - len("a\n")
+	snapshot := New(Document{URI: uri, Text: text, Version: 1})
+	previous, err := snapshot.Analyze(
+		context.Background(), uri, analysis.Options{RetainExpanded: true},
+	)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.ReportAllocs()
+	b.SetBytes(int64(len(text)))
+	for version := int64(2); b.Loop(); version++ {
+		b.StopTimer()
+		nextText := append([]byte(nil), text...)
+		nextText[edit] = byte('a' + version%2)
+		next, ok := snapshot.Update(Document{URI: uri, Text: nextText, Version: version})
+		if !ok {
+			b.Fatal("update rejected")
+		}
+		b.StartTimer()
+
+		result, err := next.Analyze(
+			context.Background(), uri, analysis.Options{RetainExpanded: true},
+		)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if result.ExpandedParse != previous.ExpandedParse {
+			b.Fatal("expanded parse was rebuilt")
+		}
+		snapshot, text, previous = next, nextText, result
+	}
+}
+
 func BenchmarkCleanFunctionAnalysis(b *testing.B) {
 	uri := source.FileURI("gamemode.pwn")
 	text := syntheticGlobalGamemode(2000)

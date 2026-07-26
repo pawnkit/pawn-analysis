@@ -4,6 +4,8 @@ package analysis
 import (
 	"context"
 	"errors"
+	"runtime"
+	"sync"
 
 	"github.com/pawnkit/pawn-analysis/preprocess"
 	"github.com/pawnkit/pawn-analysis/sema"
@@ -62,6 +64,7 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	opts.Trace = serializeTrace(opts.Trace)
 	uri := opts.URI
 	if !uri.IsValid() {
 		uri = source.FileURI("input.pwn")
@@ -95,32 +98,47 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		}
 		return fileID
 	}
-	stage = beginStage(opts.Trace, StageParseOriginal)
-	parsed := parser.ParseTokensCompact(text, pre.OriginalTokens, parser.ParseOptions{})
-	stage.end(ctx, 0)
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	stage = beginStage(opts.Trace, StageSymbolsOriginal)
-	table := symbol.Build(parsed.Syntax(), fileID)
-	table.Diagnostics = removeMacroDeclarationDiagnostics(table.Diagnostics, pre)
-	stage.end(ctx, 0)
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
+	var parsed *parser.CompactFile
+	var table *symbol.Table
 	var expanded *parser.CompactFile
 	var expandedTable *symbol.Table
-	if opts.RetainExpanded || opts.Includes != nil {
-		stage = beginStage(opts.Trace, StageParseExpanded)
+	buildOriginal := func() {
+		current := beginStage(opts.Trace, StageParseOriginal)
+		parsed = parser.ParseTokensCompact(text, pre.OriginalTokens, parser.ParseOptions{})
+		current.end(ctx, 0)
+		current = beginStage(opts.Trace, StageSymbolsOriginal)
+		table = symbol.Build(parsed.Syntax(), fileID)
+		table.Diagnostics = removeMacroDeclarationDiagnostics(table.Diagnostics, pre)
+		current.end(ctx, 0)
+	}
+	buildExpanded := func() {
+		current := beginStage(opts.Trace, StageParseExpanded)
 		expanded = parser.ParseTokensCompact(pre.ExpandedSource, pre.ExpandedTokens, parser.ParseOptions{})
-		stage.end(ctx, 0)
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		stage = beginStage(opts.Trace, StageSymbolsExpanded)
+		current.end(ctx, 0)
+		current = beginStage(opts.Trace, StageSymbolsExpanded)
 		expandedTable = symbol.BuildMapped(expanded.Syntax(), fileID, mapFile)
 		expandedTable.Diagnostics = removeMacroDeclarationDiagnostics(expandedTable.Diagnostics, pre)
-		stage.end(ctx, 0)
+		current.end(ctx, 0)
+	}
+	needsExpanded := opts.RetainExpanded || opts.Includes != nil
+	const parallelParseMinimumBytes = 256 * 1024
+	if needsExpanded && len(text)+len(pre.ExpandedSource) >= parallelParseMinimumBytes && runtime.GOMAXPROCS(0) > 1 {
+		var wait sync.WaitGroup
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			buildExpanded()
+		}()
+		buildOriginal()
+		wait.Wait()
+	} else {
+		buildOriginal()
+		if needsExpanded {
+			buildExpanded()
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	diagnostics := pre.ToRegistryDiagnostics(registry, fileID)
 	for _, item := range parsed.Diagnostics {

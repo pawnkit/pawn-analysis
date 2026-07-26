@@ -56,6 +56,29 @@ func TestAnalyzeTraceReportsStages(t *testing.T) {
 	}
 }
 
+func TestAnalyzeTraceSerializesParallelStages(t *testing.T) {
+	counts := make(map[analysis.Stage]int)
+	result, err := analysis.AnalyzeContext(context.Background(), syntheticGlobalGamemode(2000), analysis.Options{
+		RetainExpanded: true,
+		Trace: func(event analysis.TraceEvent) {
+			counts[event.Stage]++
+		},
+	})
+	if err != nil || result == nil {
+		t.Fatalf("AnalyzeContext() = (%v, %v)", result, err)
+	}
+	for _, stage := range []analysis.Stage{
+		analysis.StageParseOriginal,
+		analysis.StageSymbolsOriginal,
+		analysis.StageParseExpanded,
+		analysis.StageSymbolsExpanded,
+	} {
+		if counts[stage] != 1 {
+			t.Errorf("%s count = %d, want 1", stage, counts[stage])
+		}
+	}
+}
+
 func TestCompleteContextMatchesCleanAnalysis(t *testing.T) {
 	text := []byte("stock Helper(value) { return value; }\nmain() { Helper(1); }\n")
 	opts := analysis.Options{URI: source.FileURI("test.pwn"), RetainExpanded: true}

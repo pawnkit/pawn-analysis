@@ -2,6 +2,7 @@ package analysis
 
 import (
 	"context"
+	"sync"
 	"time"
 )
 
@@ -40,6 +41,18 @@ func beginStage(emit func(TraceEvent), stage Stage) stageTrace {
 		return stageTrace{}
 	}
 	return stageTrace{emit: emit, stage: stage, started: time.Now()}
+}
+
+func serializeTrace(emit func(TraceEvent)) func(TraceEvent) {
+	if emit == nil {
+		return nil
+	}
+	var mu sync.Mutex
+	return func(event TraceEvent) {
+		mu.Lock()
+		defer mu.Unlock()
+		emit(event)
+	}
 }
 
 func (trace stageTrace) end(ctx context.Context, reused int) {

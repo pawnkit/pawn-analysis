@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.1 - 2026-07-26
+
+### Performance
+
+- Parsed and indexed original and expanded syntax concurrently for large
+  inputs.
+- Reduced the expanded 2,000-function benchmark from 232–257 ms to 169–184
+  ms.
+
 ## 0.6.0 - 2026-07-26
 
 ### Added

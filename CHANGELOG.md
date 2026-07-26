@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.1 - 2026-07-26
+
+### Added
+
+- Report declaration indexing and reuse in analysis traces.
+
 ## 0.7.0 - 2026-07-26
 
 ### Added

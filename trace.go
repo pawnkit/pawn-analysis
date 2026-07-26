@@ -15,6 +15,7 @@ const (
 	StageSymbolsOriginal Stage = "symbols.original"
 	StageParseExpanded   Stage = "parser.expanded"
 	StageSymbolsExpanded Stage = "symbols.expanded"
+	StageDeclarations    Stage = "declarations"
 	StageSemanticNames   Stage = "semantic.names"
 	StageSemanticTags    Stage = "semantic.tags"
 	StageSemanticStates  Stage = "semantic.states"

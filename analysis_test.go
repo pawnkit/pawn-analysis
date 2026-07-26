@@ -45,6 +45,7 @@ func TestAnalyzeTraceReportsStages(t *testing.T) {
 		analysis.StageParseExpanded,
 		analysis.StageSymbolsOriginal,
 		analysis.StageSymbolsExpanded,
+		analysis.StageDeclarations,
 		analysis.StageSemanticNames,
 		analysis.StageSemanticTags,
 		analysis.StageSemanticStates,

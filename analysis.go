@@ -151,15 +151,22 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 	diagnostics = append(diagnostics, table.Diagnostics...)
 	diagnostics = append(diagnostics, expandedTableDiagnostics(expandedTable, fileID)...)
 	addDiagnosticDocs(diagnostics)
+	stage = beginStage(opts.Trace, StageDeclarations)
 	declarations := parser.BuildDeclarationIndex(parsed)
+	reusedDeclarationCount := 0
+	if opts.Previous != nil {
+		reusedDeclarationCount = reusedDeclarations(opts.Previous.Declarations, declarations)
+	}
+	stage.end(ctx, reusedDeclarationCount)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	prepared := &Result{
 		File: fileID, Registry: registry, Preprocess: pre, Parse: parsed, ExpandedParse: expanded,
 		Declarations: declarations, Symbols: table, ExpandedSymbols: expandedTable,
 		Diagnostics: diagnostics, baseDiagnostics: diagnostics,
 	}
-	if opts.Previous != nil {
-		prepared.Reuse.Declarations = reusedDeclarations(opts.Previous.Declarations, declarations)
-	}
+	prepared.Reuse.Declarations = reusedDeclarationCount
 	if opts.SkipSemantics {
 		return retainExpanded(prepared, opts.RetainExpanded), nil
 	}

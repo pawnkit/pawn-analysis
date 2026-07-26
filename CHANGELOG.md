@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.23 - 2026-07-26
+
+### Changed
+
+- Limited CFG caching to functions where reuse costs less than rebuilding.
+
 ## 0.1.22 - 2026-07-26
 
 ### Changed

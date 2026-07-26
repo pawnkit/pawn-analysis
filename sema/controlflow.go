@@ -81,8 +81,10 @@ func CheckControlFlowCached(
 				return value.Value, value.Known
 			})
 		}
-		next.entries[callable.StableID] = cachedFlow{
-			body: bodyHash, constants: constantHash, start: callable.Span.Start, graph: graph,
+		if len(graph.Blocks) >= 5 {
+			next.entries[callable.StableID] = cachedFlow{
+				body: bodyHash, constants: constantHash, start: callable.Span.Start, graph: graph,
+			}
 		}
 		flows = append(flows, FunctionFlow{Symbol: callable.ID, Graph: graph})
 		diagnostics = append(diagnostics, unreachableDiagnostics(graph)...)

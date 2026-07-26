@@ -77,13 +77,13 @@ func TestSnapshotUpdateInvalidatesChangedDocument(t *testing.T) {
 
 func TestSnapshotReusesUnchangedFunctionControlFlow(t *testing.T) {
 	uri := source.FileURI("main.pwn")
-	firstText := []byte("stock First() { return 1; }\nstock Second() { return 2; }\n")
+	firstText := []byte("stock First() { return 1; }\nstock Second(value) { new result = value; if (result > 0) result--; while (result > 1) result--; return result; }\n")
 	snapshot := New(Document{URI: uri, Text: firstText, Version: 1})
 	if _, err := snapshot.Analyze(context.Background(), uri, analysis.Options{}); err != nil {
 		t.Fatal(err)
 	}
 
-	secondText := []byte("stock First() { new value = 1; return value; }\nstock Second() { return 2; }\n")
+	secondText := []byte("stock First() { new value = 1; return value; }\nstock Second(value) { new result = value; if (result > 0) result--; while (result > 1) result--; return result; }\n")
 	next, ok := snapshot.Update(Document{URI: uri, Text: secondText, Version: 2})
 	if !ok {
 		t.Fatal("update rejected")

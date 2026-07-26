@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2 - 2026-07-26
+
+### Changed
+
+- Skipped tag-cache setup when a file has no cacheable functions.
+
 ## 0.5.1 - 2026-07-26
 
 ### Changed

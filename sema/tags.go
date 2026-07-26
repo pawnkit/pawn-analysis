@@ -44,6 +44,11 @@ func CheckTagsCached(
 	if !root.Valid() || table == nil {
 		return nil, &TagCache{entries: make(map[symbol.StableID]cachedTags)}, 0
 	}
+	if !hasCacheableTagFunction(root) {
+		checker := tagChecker{table: table, resolver: resolver}
+		checker.walk(root, "")
+		return checker.diagnostics, &TagCache{entries: make(map[symbol.StableID]cachedTags)}, 0
+	}
 	exports := table.ExportFingerprint()
 	revisionHash := sha256.Sum256([]byte(revision))
 	next := &TagCache{
@@ -51,29 +56,23 @@ func CheckTagsCached(
 		entries: make(map[symbol.StableID]cachedTags),
 	}
 	canReuse := previous != nil && previous.exports == exports && previous.revision == revisionHash
-	var diagnostics []diagnostic.Diagnostic
+	checker := tagChecker{table: table, resolver: resolver}
 	reused := 0
 	declarations := root.Declarations()
 	for declarations.Next() {
 		declaration := declarations.Declaration()
 		if declaration.Kind() != parser.KindFunctionDefinition {
-			c := tagChecker{table: table, resolver: resolver}
-			c.walk(declaration, "")
-			diagnostics = append(diagnostics, c.diagnostics...)
+			checker.walk(declaration, "")
 			continue
 		}
 		name, ok := declaration.Field("name")
 		if !ok {
-			c := tagChecker{table: table, resolver: resolver}
-			c.walk(declaration, "")
-			diagnostics = append(diagnostics, c.diagnostics...)
+			checker.walk(declaration, "")
 			continue
 		}
 		callable, ok := declaredSymbol(table, name)
 		if !ok {
-			c := tagChecker{table: table, resolver: resolver}
-			c.walk(declaration, "")
-			diagnostics = append(diagnostics, c.diagnostics...)
+			checker.walk(declaration, "")
 			continue
 		}
 		stableID, stable := table.StableSymbolID(callable.ID)
@@ -85,7 +84,7 @@ func CheckTagsCached(
 		if canReuse && cacheable {
 			if cached, found := previous.entries[stableID]; found && cached.body == bodyHash {
 				items := shiftTagDiagnostics(cached.diagnostics, table.File, callable.Span.Start-cached.start)
-				diagnostics = append(diagnostics, items...)
+				checker.diagnostics = append(checker.diagnostics, items...)
 				next.entries[stableID] = cachedTags{
 					body: bodyHash, start: callable.Span.Start, diagnostics: items,
 				}
@@ -93,17 +92,27 @@ func CheckTagsCached(
 				continue
 			}
 		}
-		c := tagChecker{table: table, resolver: resolver}
-		c.walk(declaration, "")
-		diagnostics = append(diagnostics, c.diagnostics...)
+		firstDiagnostic := len(checker.diagnostics)
+		checker.walk(declaration, "")
 		if cacheable {
 			next.entries[stableID] = cachedTags{
 				body: bodyHash, start: callable.Span.Start,
-				diagnostics: append([]diagnostic.Diagnostic(nil), c.diagnostics...),
+				diagnostics: append([]diagnostic.Diagnostic(nil), checker.diagnostics[firstDiagnostic:]...),
 			}
 		}
 	}
-	return diagnostics, next, reused
+	return checker.diagnostics, next, reused
+}
+
+func hasCacheableTagFunction(root parser.SyntaxNode) bool {
+	declarations := root.Declarations()
+	for declarations.Next() {
+		declaration := declarations.Declaration()
+		if declaration.Kind() == parser.KindFunctionDefinition && len(declaration.Bytes()) >= tagCacheMinimumBytes {
+			return true
+		}
+	}
+	return false
 }
 
 func shiftTagDiagnostics(items []diagnostic.Diagnostic, file source.FileID, delta source.Offset) []diagnostic.Diagnostic {

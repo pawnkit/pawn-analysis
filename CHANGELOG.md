@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.0 - 2026-07-26
+
+### Added
+
+- Analysis snapshots can retain persistent source buffers until analysis starts.
+
 ## 0.7.1 - 2026-07-26
 
 ### Added

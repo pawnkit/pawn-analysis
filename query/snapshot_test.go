@@ -113,6 +113,23 @@ func TestSnapshotReusesUnchangedFunctionControlFlow(t *testing.T) {
 	}
 }
 
+func TestSnapshotAnalyzesPersistentBuffer(t *testing.T) {
+	uri := source.FileURI("/workspace/main.pwn")
+	buffer := source.NewTextBuffer([]byte("main() { return 1; }\n"))
+	snapshot := New(Document{URI: uri, Buffer: buffer, Version: 1})
+	result, err := snapshot.Analyze(context.Background(), uri, analysis.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Parse == nil || result.Parse.HasParseErrors() {
+		t.Fatal("buffer analysis did not parse")
+	}
+	document, ok := snapshot.Document(uri)
+	if !ok || document.Buffer != buffer || document.Text != nil {
+		t.Fatal("snapshot did not retain the persistent buffer")
+	}
+}
+
 func TestSnapshotInvalidatesTagChecksWhenExportsChange(t *testing.T) {
 	uri := source.FileURI("main.pwn")
 	firstText := []byte("new Float:Value;\nstock Use() { new result = Value; return result; }\n")

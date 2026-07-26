@@ -19,6 +19,7 @@ var ErrDocumentNotFound = errors.New("document not found")
 type Document struct {
 	URI     source.URI
 	Text    []byte
+	Buffer  *source.TextBuffer
 	Version int64
 }
 
@@ -135,7 +136,11 @@ func (s *Snapshot) Analyze(ctx context.Context, uri source.URI, opts analysis.Op
 		return result, nil
 	}
 	opts.Previous = s.prior[reuseKey{uri: uri, options: optionKey}]
-	result, err := analysis.AnalyzeContext(ctx, document.Text, opts)
+	text := document.Text
+	if document.Buffer != nil {
+		text = document.Buffer.Bytes()
+	}
+	result, err := analysis.AnalyzeContext(ctx, text, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +155,9 @@ func (s *Snapshot) Analyze(ctx context.Context, uri source.URI, opts analysis.Op
 }
 
 func cloneDocument(document Document) Document {
-	document.Text = append([]byte(nil), document.Text...)
+	if document.Buffer == nil {
+		document.Text = append([]byte(nil), document.Text...)
+	}
 	return document
 }
 

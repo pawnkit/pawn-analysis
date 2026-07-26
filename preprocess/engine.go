@@ -1,6 +1,8 @@
 package preprocess
 
 import (
+	"context"
+
 	"github.com/pawnkit/pawn-parser/lexer"
 	"github.com/pawnkit/pawn-parser/token"
 	"github.com/pawnkit/pawnkit-core/diagnostic"
@@ -288,6 +290,10 @@ func (h hideSet) with(name string) hideSet {
 }
 
 type engine struct {
+	ctx          context.Context
+	cancellable  bool
+	cancelled    error
+	steps        uint32
 	macros       *macroTable
 	out          []token.Token
 	expandedBuf  []byte
@@ -309,8 +315,25 @@ type engine struct {
 // never panics on malformed input; unbalanced or truncated constructs are
 // reported as diagnostics and bounded by Options' limits.
 func Run(src []byte, opts Options) *Result {
+	result, _ := run(src, opts, context.Background(), false)
+	return result
+}
+
+// RunContext preprocesses src and stops when ctx is cancelled.
+func RunContext(ctx context.Context, src []byte, opts Options) (*Result, error) {
+	return run(src, opts, ctx, true)
+}
+
+func run(src []byte, opts Options, ctx context.Context, cancellable bool) (*Result, error) {
+	if cancellable {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+	}
 	opts = opts.resolved()
 	e := &engine{
+		ctx:          ctx,
+		cancellable:  cancellable,
 		macros:       newMacroTable(),
 		opts:         opts,
 		includeStack: make(map[string]bool),
@@ -326,6 +349,9 @@ func Run(src []byte, opts Options) *Result {
 	e.expandedBuf = make([]byte, 0, len(src))
 	root := &frame{fileIndex: 0, source: src, toks: originalTokens, uri: opts.URI, lineStart: true}
 	e.run(root)
+	if e.cancelled != nil {
+		return nil, e.cancelled
+	}
 	e.appendEOF()
 	e.backfillPositions()
 
@@ -340,7 +366,23 @@ func Run(src []byte, opts Options) *Result {
 		Macros:         e.macros.snapshot(),
 		Diagnostics:    e.diags,
 		Truncated:      e.truncated,
+	}, nil
+}
+
+func (e *engine) pollCancellation() bool {
+	if !e.cancellable {
+		return false
 	}
+	e.steps++
+	if e.steps%256 != 0 {
+		return false
+	}
+	if err := e.ctx.Err(); err != nil {
+		e.cancelled = err
+		e.stopped = true
+		return true
+	}
+	return false
 }
 
 func (e *engine) appendEOF() {
@@ -363,6 +405,9 @@ func (e *engine) backfillPositions() {
 
 func (e *engine) run(f *frame) {
 	for !f.atEnd() && !e.stopped && !f.endinput {
+		if e.pollCancellation() {
+			return
+		}
 		if f.lineStart && f.cur().Kind == token.Hash {
 			e.handleDirectiveLine(f)
 			continue

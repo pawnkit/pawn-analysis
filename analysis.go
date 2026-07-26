@@ -75,7 +75,7 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 	fileID := registry.Intern(uri)
 
 	stage := beginStage(opts.Trace, StagePreprocess)
-	pre := preprocess.Run(text, preprocess.Options{
+	pre, err := preprocess.RunContext(ctx, text, preprocess.Options{
 		URI:             uri.String(),
 		Resolver:        opts.Includes,
 		Predefined:      opts.Predefined,
@@ -83,7 +83,7 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		TokenCache:      opts.TokenCache,
 	})
 	stage.end(ctx, 0)
-	if err := ctx.Err(); err != nil {
+	if err != nil {
 		return nil, err
 	}
 	fileIDs := make([]source.FileID, len(pre.Files))

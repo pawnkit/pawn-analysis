@@ -1,11 +1,30 @@
 package preprocess_test
 
 import (
+	"context"
+	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/pawnkit/pawn-analysis/preprocess"
 )
+
+type delayedCancelContext struct {
+	checks atomic.Int32
+	after  int32
+}
+
+func (c *delayedCancelContext) Deadline() (time.Time, bool) { return time.Time{}, false }
+func (c *delayedCancelContext) Done() <-chan struct{}       { return nil }
+func (c *delayedCancelContext) Value(any) any               { return nil }
+func (c *delayedCancelContext) Err() error {
+	if c.checks.Add(1) > c.after {
+		return context.Canceled
+	}
+	return nil
+}
 
 func expandedText(t *testing.T, r *preprocess.Result) string {
 	t.Helper()
@@ -18,6 +37,19 @@ func expandedText(t *testing.T, r *preprocess.Result) string {
 		sb.WriteByte(' ')
 	}
 	return sb.String()
+}
+
+func TestRunContextStopsDuringPreprocessing(t *testing.T) {
+	src := []byte("#define DUP(%0) %0 %0\n" + strings.Repeat("DUP(value)\n", 2_000))
+	ctx := &delayedCancelContext{after: 1}
+
+	result, err := preprocess.RunContext(ctx, src, preprocess.Options{})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled", err)
+	}
+	if result != nil {
+		t.Fatal("cancelled preprocessing returned a result")
+	}
 }
 
 func TestObjectMacroExpansion(t *testing.T) {

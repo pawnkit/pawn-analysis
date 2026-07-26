@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.0 - 2026-07-26
+
+### Added
+
+- Allow preprocessing and macro expansion to stop when analysis is cancelled.
+
 ## 0.9.0 - 2026-07-26
 
 ### Changed

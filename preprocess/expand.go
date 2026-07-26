@@ -30,7 +30,7 @@ func (e *engine) emitActive(f *frame) {
 
 // appendOut writes a token into the synthesized output buffer.
 func (e *engine) appendOut(t ptok) {
-	if e.truncated {
+	if e.truncated || e.pollCancellation() {
 		return
 	}
 	e.outputTokens++
@@ -146,6 +146,9 @@ func (e *engine) collectArgs(f *frame) (args [][]ptok, closeParen token.Token, o
 	depth := 0
 	var current []ptok
 	for {
+		if e.pollCancellation() {
+			return nil, token.Token{}, false
+		}
 		if f.atEnd() {
 			return nil, token.Token{}, false
 		}
@@ -225,6 +228,9 @@ func (e *engine) expandRun(f *frame, toks []ptok, hide hideSet, depth int) []pto
 	var out []ptok
 	i := 0
 	for i < len(toks) {
+		if e.pollCancellation() {
+			break
+		}
 		// Stop recursive expansion before it builds an oversized slice.
 		if len(out) > e.opts.MaxOutputTokens {
 			e.truncated = true

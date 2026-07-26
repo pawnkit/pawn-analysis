@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1 - 2026-07-26
+
+### Changed
+
+- Reused the symbol table's span indexes during tag checks.
+
 ## 0.3.0 - 2026-07-26
 
 ### Changed

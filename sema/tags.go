@@ -8,7 +8,6 @@ import (
 	parser "github.com/pawnkit/pawn-parser"
 	"github.com/pawnkit/pawn-parser/token"
 	"github.com/pawnkit/pawnkit-core/diagnostic"
-	"github.com/pawnkit/pawnkit-core/source"
 )
 
 // CheckTags reports confirmed assignment and return tag mismatches.
@@ -17,31 +16,14 @@ func CheckTags(root parser.SyntaxNode, table *symbol.Table, resolver Resolver) [
 		return nil
 	}
 	c := tagChecker{table: table, resolver: resolver}
-	c.symbolsBySpan = make(map[source.Span]symbol.Symbol, len(table.Symbols))
-	for _, item := range table.Symbols {
-		if _, exists := c.symbolsBySpan[item.Span]; !exists {
-			c.symbolsBySpan[item.Span] = item
-		}
-	}
-	c.refsBySpan = make(map[source.Span]symbol.Reference, len(table.References))
-	for _, ref := range table.References {
-		if ref.Resolved == 0 {
-			continue
-		}
-		if _, exists := c.refsBySpan[ref.Span]; !exists {
-			c.refsBySpan[ref.Span] = ref
-		}
-	}
 	c.walk(root, "")
 	return c.diagnostics
 }
 
 type tagChecker struct {
-	table         *symbol.Table
-	resolver      Resolver
-	diagnostics   []diagnostic.Diagnostic
-	symbolsBySpan map[source.Span]symbol.Symbol
-	refsBySpan    map[source.Span]symbol.Reference
+	table       *symbol.Table
+	resolver    Resolver
+	diagnostics []diagnostic.Diagnostic
 }
 
 func (c *tagChecker) walk(node parser.SyntaxNode, returnTag string) {
@@ -293,14 +275,13 @@ func (c *tagChecker) externalCallable(name string) (Callable, bool) {
 
 func (c *tagChecker) declaration(node parser.SyntaxNode) (symbol.Symbol, bool) {
 	span := node.Range().Span(c.table.File)
-	item, ok := c.symbolsBySpan[span]
-	return item, ok
+	return c.table.DeclarationAt(span)
 }
 
 func (c *tagChecker) reference(node parser.SyntaxNode) (symbol.Symbol, bool) {
 	span := node.Range().Span(c.table.File)
-	if ref, ok := c.refsBySpan[span]; ok {
-		return c.table.Symbol(ref.Resolved)
+	if item, ok := c.table.ReferencedAt(span); ok {
+		return item, true
 	}
 	return c.declaration(node)
 }

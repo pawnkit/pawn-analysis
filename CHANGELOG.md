@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.24 - 2026-07-26
+
+### Changed
+
+- Avoided body hashing for functions that are not CFG cache candidates.
+
 ## 0.1.23 - 2026-07-26
 
 ### Changed

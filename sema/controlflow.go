@@ -66,11 +66,18 @@ func CheckControlFlowCached(
 		if !ok {
 			continue
 		}
-		bodyHash := sha256.Sum256(body.Bytes())
-		graph := reuseFlow(previous, callable, bodyHash, constantHash, table.File)
-		if graph != nil {
-			reused++
-		} else {
+		var bodyHash [32]byte
+		var graph *cfg.Graph
+		if previous != nil {
+			if cached, ok := previous.entries[callable.StableID]; ok {
+				bodyHash = sha256.Sum256(body.Bytes())
+				graph = reuseFlow(cached, callable, bodyHash, constantHash, table.File)
+				if graph != nil {
+					reused++
+				}
+			}
+		}
+		if graph == nil {
 			graph = cfg.BuildWithEvaluator(body, table.File, func(node parser.SyntaxNode) (int64, bool) {
 				value := EvalConstantResolved(node, func(identifier parser.SyntaxNode) Constant {
 					if item, ok := referencedSymbol(table, identifier); ok {
@@ -82,6 +89,9 @@ func CheckControlFlowCached(
 			})
 		}
 		if len(graph.Blocks) >= 5 {
+			if bodyHash == ([32]byte{}) {
+				bodyHash = sha256.Sum256(body.Bytes())
+			}
 			next.entries[callable.StableID] = cachedFlow{
 				body: bodyHash, constants: constantHash, start: callable.Span.Start, graph: graph,
 			}
@@ -105,16 +115,15 @@ func CheckControlFlowCached(
 }
 
 func reuseFlow(
-	previous *FlowCache,
+	cached cachedFlow,
 	callable symbol.Symbol,
 	body, constants [32]byte,
 	file source.FileID,
 ) *cfg.Graph {
-	if previous == nil || callable.StableID == ([32]byte{}) {
+	if callable.StableID == ([32]byte{}) {
 		return nil
 	}
-	cached, ok := previous.entries[callable.StableID]
-	if !ok || cached.body != body || cached.constants != constants {
+	if cached.body != body || cached.constants != constants {
 		return nil
 	}
 	return shiftGraph(cached.graph, file, callable.Span.Start-cached.start)

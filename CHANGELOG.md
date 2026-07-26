@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.21 - 2026-07-26
+
+### Added
+
+- Added stable top-level symbol IDs and export fingerprints.
+- Reused unchanged function control-flow graphs across snapshot revisions.
+
 ## 0.1.20 - 2026-07-26
 
 ### Changed

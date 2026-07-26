@@ -27,6 +27,7 @@ type Snapshot struct {
 	mu    sync.Mutex
 	docs  map[source.URI]Document
 	cache map[cacheKey]*analysis.Result
+	prior map[reuseKey]*analysis.Result
 }
 
 type cacheKey struct {
@@ -36,8 +37,16 @@ type cacheKey struct {
 	options [32]byte
 }
 
+type reuseKey struct {
+	uri     source.URI
+	options [32]byte
+}
+
 func New(documents ...Document) *Snapshot {
-	s := &Snapshot{docs: make(map[source.URI]Document), cache: make(map[cacheKey]*analysis.Result)}
+	s := &Snapshot{
+		docs: make(map[source.URI]Document), cache: make(map[cacheKey]*analysis.Result),
+		prior: make(map[reuseKey]*analysis.Result),
+	}
 	for _, document := range documents {
 		s.docs[document.URI] = cloneDocument(document)
 	}
@@ -52,7 +61,10 @@ func (s *Snapshot) Update(document Document) (*Snapshot, bool) {
 	if current, ok := s.docs[document.URI]; ok && document.Version <= current.Version {
 		return s, false
 	}
-	next := &Snapshot{docs: make(map[source.URI]Document, len(s.docs)+1), cache: make(map[cacheKey]*analysis.Result)}
+	next := &Snapshot{
+		docs: make(map[source.URI]Document, len(s.docs)+1), cache: make(map[cacheKey]*analysis.Result),
+		prior: make(map[reuseKey]*analysis.Result),
+	}
 	for uri, current := range s.docs {
 		next.docs[uri] = current
 	}
@@ -62,6 +74,8 @@ func (s *Snapshot) Update(document Document) (*Snapshot, bool) {
 	for key, result := range s.cache {
 		if key.uri != document.URI {
 			next.cache[key] = result
+		} else {
+			next.prior[reuseKey{uri: key.uri, options: key.options}] = result
 		}
 	}
 	s.mu.Unlock()
@@ -86,13 +100,15 @@ func (s *Snapshot) Analyze(ctx context.Context, uri source.URI, opts analysis.Op
 		return nil, ErrDocumentNotFound
 	}
 	opts.URI = uri
-	key := cacheKey{uri: uri, version: document.Version, content: sha256.Sum256(document.Text), options: optionsHash(opts)}
+	optionKey := optionsHash(opts)
+	key := cacheKey{uri: uri, version: document.Version, content: sha256.Sum256(document.Text), options: optionKey}
 	s.mu.Lock()
 	result := s.cache[key]
 	s.mu.Unlock()
 	if result != nil {
 		return result, nil
 	}
+	opts.Previous = s.prior[reuseKey{uri: uri, options: optionKey}]
 	result, err := analysis.AnalyzeContext(ctx, document.Text, opts)
 	if err != nil {
 		return nil, err

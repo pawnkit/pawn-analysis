@@ -2,6 +2,12 @@
 package symbol
 
 import (
+	"crypto/sha256"
+	"encoding/binary"
+	"sort"
+	"strconv"
+	"strings"
+
 	"github.com/pawnkit/pawnkit-core/diagnostic"
 	"github.com/pawnkit/pawnkit-core/source"
 )
@@ -90,6 +96,7 @@ type Symbol struct {
 	ParamTags     []string    // parameter tags in declaration order.
 	StateSelector string      // state selector text; empty for ordinary declarations.
 	Span          source.Span // the declaration name's span.
+	StableID      [32]byte    // stable across body-only edits.
 }
 
 // ScopeKind classifies a [Scope].
@@ -128,9 +135,45 @@ type Table struct {
 	Scopes      []Scope
 	References  []Reference
 	Diagnostics []diagnostic.Diagnostic
+	Exports     [32]byte
 
 	declarations map[source.Span]ID
 	references   map[source.Span]ID
+}
+
+func (t *Table) buildStableIDs() {
+	ordinals := make(map[string]uint64)
+	exports := make([]string, 0)
+	for i := range t.Symbols {
+		item := &t.Symbols[i]
+		scope, ok := t.Scope(item.Scope)
+		if !ok || scope.Kind != ScopeFile {
+			continue
+		}
+		signature := stableSignature(*item)
+		ordinal := ordinals[signature]
+		ordinals[signature]++
+		hash := sha256.New()
+		hash.Write([]byte(signature))
+		var encoded [8]byte
+		binary.LittleEndian.PutUint64(encoded[:], ordinal)
+		hash.Write(encoded[:])
+		copy(item.StableID[:], hash.Sum(nil))
+		exports = append(exports, signature)
+	}
+	sort.Strings(exports)
+	t.Exports = sha256.Sum256([]byte(strings.Join(exports, "\x00")))
+}
+
+func stableSignature(item Symbol) string {
+	parts := []string{
+		strconv.Itoa(int(item.Kind)), item.Name, item.Tag,
+		strconv.FormatBool(item.IsArray), strconv.FormatBool(item.IsConst),
+		strconv.FormatBool(item.IsStatic), strconv.Itoa(item.MinArgs),
+		strconv.Itoa(item.MaxArgs), strings.Join(item.ParamTags, ","),
+		item.StateSelector,
+	}
+	return strings.Join(parts, "\x1f")
 }
 
 // Symbol looks up a symbol by ID.

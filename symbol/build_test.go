@@ -83,6 +83,31 @@ func TestSpanIndexes(t *testing.T) {
 	t.Fatal("missing value reference")
 }
 
+func TestStableIDsIgnoreFunctionBodiesAndOffsets(t *testing.T) {
+	first, _ := buildTable(t, "stock Helper(value) { return value; }\nmain() {}\n")
+	second, _ := buildTable(t, "\nstock Helper(value) { return value + 1; }\nmain() {}\n")
+
+	firstHelper, firstOK := findSymbol(first, "Helper")
+	secondHelper, secondOK := findSymbol(second, "Helper")
+	if !firstOK || !secondOK {
+		t.Fatal("missing Helper symbol")
+	}
+	if firstHelper.StableID != secondHelper.StableID {
+		t.Fatal("function body or offset changed the stable ID")
+	}
+	if first.Exports != second.Exports {
+		t.Fatal("function body or offset changed the export fingerprint")
+	}
+}
+
+func TestExportFingerprintTracksSignatures(t *testing.T) {
+	first, _ := buildTable(t, "stock Helper(value) { return value; }\n")
+	second, _ := buildTable(t, "stock Float:Helper(Float:value) { return value; }\n")
+	if first.Exports == second.Exports {
+		t.Fatal("signature change did not update the export fingerprint")
+	}
+}
+
 func TestRedeclarationInSameScope(t *testing.T) {
 	src := "stock DoWork(value) { new total = 0; new total = 1; return total + value; }\n"
 	table, _ := buildTable(t, src)

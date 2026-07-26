@@ -27,3 +27,8 @@ results when resolver or API state changes.
 
 Project hosts that know their dependency graph can use `AnalyzeDocuments` to
 exclude unrelated files from name resolution.
+
+Top-level declarations have stable IDs based on their signatures, not source
+offsets or function bodies. Snapshot updates use them to reuse unchanged CFGs.
+Function edits invalidate their own CFG. Changes to resolved global constants
+invalidate every CFG because they can change conditional control flow.

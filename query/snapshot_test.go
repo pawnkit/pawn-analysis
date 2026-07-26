@@ -3,6 +3,7 @@ package query
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -71,6 +72,62 @@ func TestSnapshotUpdateInvalidatesChangedDocument(t *testing.T) {
 	old, _ := snapshot.Document(uri)
 	if old.Version != 1 {
 		t.Fatal("update mutated the old snapshot")
+	}
+}
+
+func TestSnapshotReusesUnchangedFunctionControlFlow(t *testing.T) {
+	uri := source.FileURI("main.pwn")
+	firstText := []byte("stock First() { return 1; }\nstock Second() { return 2; }\n")
+	snapshot := New(Document{URI: uri, Text: firstText, Version: 1})
+	if _, err := snapshot.Analyze(context.Background(), uri, analysis.Options{}); err != nil {
+		t.Fatal(err)
+	}
+
+	secondText := []byte("stock First() { new value = 1; return value; }\nstock Second() { return 2; }\n")
+	next, ok := snapshot.Update(Document{URI: uri, Text: secondText, Version: 2})
+	if !ok {
+		t.Fatal("update rejected")
+	}
+	got, err := next.Analyze(context.Background(), uri, analysis.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Reuse.ControlFlow != 1 {
+		t.Fatalf("reused CFGs = %d, want 1", got.Reuse.ControlFlow)
+	}
+
+	clean, err := New(Document{URI: uri, Text: secondText, Version: 2}).Analyze(
+		context.Background(), uri, analysis.Options{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.Diagnostics, clean.Diagnostics) {
+		t.Fatalf("incremental diagnostics differ:\ngot  %#v\nwant %#v", got.Diagnostics, clean.Diagnostics)
+	}
+	if !reflect.DeepEqual(got.ControlFlow, clean.ControlFlow) {
+		t.Fatal("reused control flow differs from clean analysis")
+	}
+}
+
+func TestSnapshotInvalidatesControlFlowWhenConstantsChange(t *testing.T) {
+	uri := source.FileURI("main.pwn")
+	firstText := []byte("const LIMIT = 1;\nstock First() { if (LIMIT) return 1; }\nstock Second() { if (LIMIT) return 2; }\n")
+	snapshot := New(Document{URI: uri, Text: firstText, Version: 1})
+	if _, err := snapshot.Analyze(context.Background(), uri, analysis.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	secondText := []byte("const LIMIT = 0;\nstock First() { if (LIMIT) return 1; }\nstock Second() { if (LIMIT) return 2; }\n")
+	next, ok := snapshot.Update(Document{URI: uri, Text: secondText, Version: 2})
+	if !ok {
+		t.Fatal("update rejected")
+	}
+	result, err := next.Analyze(context.Background(), uri, analysis.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Reuse.ControlFlow != 0 {
+		t.Fatalf("reused CFGs = %d after constant change", result.Reuse.ControlFlow)
 	}
 }
 

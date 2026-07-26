@@ -57,6 +57,57 @@ func BenchmarkSnapshotCachedAnalysis(b *testing.B) {
 	}
 }
 
+func BenchmarkIncrementalFunctionAnalysis(b *testing.B) {
+	const functions = 2000
+	uri := source.FileURI("gamemode.pwn")
+	text := syntheticGlobalGamemode(functions)
+	edit := strings.Index(string(text), "value + MAX_PLAYERS") + len("value ")
+	snapshot := New(Document{URI: uri, Text: text, Version: 1})
+	if _, err := snapshot.Analyze(context.Background(), uri, analysis.Options{}); err != nil {
+		b.Fatal(err)
+	}
+
+	b.ReportAllocs()
+	b.SetBytes(int64(len(text)))
+	for version := int64(2); b.Loop(); version++ {
+		b.StopTimer()
+		nextText := append([]byte(nil), text...)
+		if version%2 == 0 {
+			nextText[edit] = '-'
+		} else {
+			nextText[edit] = '+'
+		}
+		next, ok := snapshot.Update(Document{URI: uri, Text: nextText, Version: version})
+		if !ok {
+			b.Fatal("update rejected")
+		}
+		b.StartTimer()
+
+		result, err := next.Analyze(context.Background(), uri, analysis.Options{})
+		if err != nil {
+			b.Fatal(err)
+		}
+		if result.Reuse.ControlFlow != functions-1 {
+			b.Fatalf("reused CFGs = %d, want %d", result.Reuse.ControlFlow, functions-1)
+		}
+		snapshot = next
+		text = nextText
+	}
+}
+
+func BenchmarkCleanFunctionAnalysis(b *testing.B) {
+	uri := source.FileURI("gamemode.pwn")
+	text := syntheticGlobalGamemode(2000)
+	b.ReportAllocs()
+	b.SetBytes(int64(len(text)))
+	for version := int64(1); b.Loop(); version++ {
+		snapshot := New(Document{URI: uri, Text: text, Version: version})
+		if _, err := snapshot.Analyze(context.Background(), uri, analysis.Options{}); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func BenchmarkAnalyzeWorkspace100Files(b *testing.B) {
 	documents := make([]Document, 100)
 	for i := range documents {

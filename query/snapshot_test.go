@@ -151,6 +151,19 @@ func TestSnapshotCopiesDocumentText(t *testing.T) {
 	}
 }
 
+func TestSnapshotOwnedUpdateRetainsDocumentText(t *testing.T) {
+	uri := source.FileURI("main.pwn")
+	text := []byte("main() {}")
+	snapshot, ok := New().UpdateOwned(Document{URI: uri, Text: text, Version: 1})
+	if !ok {
+		t.Fatal("update rejected")
+	}
+	stored := snapshot.docs[uri]
+	if &stored.Text[0] != &text[0] {
+		t.Fatal("owned update copied document text")
+	}
+}
+
 func TestSnapshotCancellationAndMissingDocument(t *testing.T) {
 	uri := source.FileURI("main.pwn")
 	snapshot := New(Document{URI: uri, Text: []byte("main() {}"), Version: 1})

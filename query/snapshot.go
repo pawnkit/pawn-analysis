@@ -55,8 +55,21 @@ func New(documents ...Document) *Snapshot {
 
 // Update returns a new snapshot. Stale versions are rejected.
 func (s *Snapshot) Update(document Document) (*Snapshot, bool) {
+	return s.update(document, true)
+}
+
+// UpdateOwned returns a new snapshot without copying document.Text. The caller
+// must not modify the slice after this call.
+func (s *Snapshot) UpdateOwned(document Document) (*Snapshot, bool) {
+	return s.update(document, false)
+}
+
+func (s *Snapshot) update(document Document, cloneText bool) (*Snapshot, bool) {
 	if s == nil {
-		return New(document), true
+		if cloneText {
+			return New(document), true
+		}
+		return newOwned(document), true
 	}
 	if current, ok := s.docs[document.URI]; ok && document.Version <= current.Version {
 		return s, false
@@ -68,7 +81,10 @@ func (s *Snapshot) Update(document Document) (*Snapshot, bool) {
 	for uri, current := range s.docs {
 		next.docs[uri] = current
 	}
-	next.docs[document.URI] = cloneDocument(document)
+	if cloneText {
+		document = cloneDocument(document)
+	}
+	next.docs[document.URI] = document
 
 	s.mu.Lock()
 	for key, result := range s.cache {
@@ -80,6 +96,17 @@ func (s *Snapshot) Update(document Document) (*Snapshot, bool) {
 	}
 	s.mu.Unlock()
 	return next, true
+}
+
+func newOwned(documents ...Document) *Snapshot {
+	s := &Snapshot{
+		docs: make(map[source.URI]Document), cache: make(map[cacheKey]*analysis.Result),
+		prior: make(map[reuseKey]*analysis.Result),
+	}
+	for _, document := range documents {
+		s.docs[document.URI] = document
+	}
+	return s
 }
 
 func (s *Snapshot) Document(uri source.URI) (Document, bool) {

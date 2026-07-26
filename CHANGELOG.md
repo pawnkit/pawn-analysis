@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0 - 2026-07-26
+
+### Added
+
+- Added `query.Snapshot.UpdateOwned` for immutable editor buffers.
+
+### Changed
+
+- Avoided a 476 KB copy per revision in the large snapshot benchmark.
+
 ## 0.3.1 - 2026-07-26
 
 ### Changed

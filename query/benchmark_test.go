@@ -57,6 +57,32 @@ func BenchmarkSnapshotCachedAnalysis(b *testing.B) {
 	}
 }
 
+func BenchmarkSnapshotUpdateLargeDocument(b *testing.B) {
+	text := syntheticGlobalGamemode(2000)
+	uri := source.FileURI("gamemode.pwn")
+	for _, benchmark := range []struct {
+		name  string
+		owned bool
+	}{
+		{name: "copy"},
+		{name: "owned", owned: true},
+	} {
+		b.Run(benchmark.name, func(b *testing.B) {
+			snapshot := New()
+			b.ReportAllocs()
+			b.SetBytes(int64(len(text)))
+			for version := int64(1); b.Loop(); version++ {
+				document := Document{URI: uri, Text: text, Version: version}
+				if benchmark.owned {
+					snapshot, _ = snapshot.UpdateOwned(document)
+				} else {
+					snapshot, _ = snapshot.Update(document)
+				}
+			}
+		})
+	}
+}
+
 func BenchmarkIncrementalFunctionAnalysis(b *testing.B) {
 	const functions = 2000
 	uri := source.FileURI("gamemode.pwn")

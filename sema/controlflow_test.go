@@ -1,10 +1,29 @@
 package sema_test
 
 import (
+	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/pawnkit/pawn-analysis/sema"
 )
+
+func TestCheckControlFlowContextStopsDuringConstruction(t *testing.T) {
+	text := "main() {" + strings.Repeat("value++;\n", 2_000) + "}"
+	file := parseCompact(t, text)
+	ctx := &delayedCancelContext{after: 1}
+
+	flows, diagnostics, cache, reused, err := sema.CheckControlFlowCachedContext(
+		ctx, file.Syntax(), tableFor(t, text), nil,
+	)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled", err)
+	}
+	if flows != nil || diagnostics != nil || cache != nil || reused != 0 {
+		t.Fatal("cancelled control-flow checking returned partial results")
+	}
+}
 
 func TestControlFlowDiagnostics(t *testing.T) {
 	tests := []struct {

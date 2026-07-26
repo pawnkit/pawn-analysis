@@ -1,6 +1,7 @@
 package sema
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
@@ -42,17 +43,52 @@ func CheckControlFlowCached(
 	table *symbol.Table,
 	previous *FlowCache,
 ) ([]FunctionFlow, []diagnostic.Diagnostic, *FlowCache, int) {
+	flows, diagnostics, cache, reused, _ := checkControlFlowCached(
+		context.Background(), false, root, table, previous,
+	)
+	return flows, diagnostics, cache, reused
+}
+
+// CheckControlFlowCachedContext reuses CFGs and observes cancellation.
+func CheckControlFlowCachedContext(
+	ctx context.Context,
+	root parser.SyntaxNode,
+	table *symbol.Table,
+	previous *FlowCache,
+) ([]FunctionFlow, []diagnostic.Diagnostic, *FlowCache, int, error) {
+	return checkControlFlowCached(ctx, true, root, table, previous)
+}
+
+func checkControlFlowCached(
+	ctx context.Context,
+	cancellable bool,
+	root parser.SyntaxNode,
+	table *symbol.Table,
+	previous *FlowCache,
+) ([]FunctionFlow, []diagnostic.Diagnostic, *FlowCache, int, error) {
+	cancel := cancellation{ctx: ctx, cancellable: cancellable}
+	if cancellable {
+		if err := ctx.Err(); err != nil {
+			return nil, nil, nil, 0, err
+		}
+	}
 	if !root.Valid() || table == nil {
-		return nil, nil, &FlowCache{entries: make(map[symbol.StableID]cachedFlow)}, 0
+		return nil, nil, &FlowCache{entries: make(map[symbol.StableID]cachedFlow)}, 0, nil
 	}
 	var flows []FunctionFlow
 	var diagnostics []diagnostic.Diagnostic
-	constants := ResolveConstants(root, table)
+	constants, err := ResolveConstantsContext(ctx, root, table)
+	if err != nil {
+		return nil, nil, nil, 0, err
+	}
 	constantHash := constantFingerprint(table, constants)
 	next := &FlowCache{entries: make(map[symbol.StableID]cachedFlow)}
 	reused := 0
 	decls := root.Declarations()
 	for decls.Next() {
+		if cancel.poll() {
+			return nil, nil, nil, 0, cancel.err
+		}
 		declaration := decls.Declaration()
 		if declaration.Kind() != parser.KindFunctionDefinition {
 			continue
@@ -83,7 +119,8 @@ func CheckControlFlowCached(
 			}
 		}
 		if graph == nil {
-			graph = cfg.BuildWithEvaluator(body, table.File, func(node parser.SyntaxNode) (int64, bool) {
+			var err error
+			graph, err = cfg.BuildWithEvaluatorContext(ctx, body, table.File, func(node parser.SyntaxNode) (int64, bool) {
 				value := EvalConstantResolved(node, func(identifier parser.SyntaxNode) Constant {
 					if item, ok := referencedSymbol(table, identifier); ok {
 						return constants[item.ID]
@@ -92,6 +129,9 @@ func CheckControlFlowCached(
 				})
 				return value.Value, value.Known
 			})
+			if err != nil {
+				return nil, nil, nil, 0, err
+			}
 		}
 		if len(graph.Blocks) >= 5 {
 			if !stable {
@@ -121,7 +161,7 @@ func CheckControlFlowCached(
 			))
 		}
 	}
-	return flows, diagnostics, next, reused
+	return flows, diagnostics, next, reused, nil
 }
 
 func reuseFlow(

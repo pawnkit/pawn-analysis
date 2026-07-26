@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.13.0 - 2026-07-26
+
+### Added
+
+- Allow state checks, constant analysis, and CFG construction to stop during
+  cancellation.
+
 ## 0.12.0 - 2026-07-26
 
 ### Added

@@ -2,6 +2,7 @@
 package cfg
 
 import (
+	"context"
 	"sort"
 
 	parser "github.com/pawnkit/pawn-parser"
@@ -41,7 +42,34 @@ func Build(body parser.SyntaxNode, file source.FileID) *Graph {
 
 // BuildWithEvaluator prunes edges whose conditions have known constant values.
 func BuildWithEvaluator(body parser.SyntaxNode, file source.FileID, eval ConstantEvaluator) *Graph {
+	graph, _ := build(context.Background(), false, body, file, eval)
+	return graph
+}
+
+// BuildWithEvaluatorContext builds a graph and observes cancellation.
+func BuildWithEvaluatorContext(
+	ctx context.Context,
+	body parser.SyntaxNode,
+	file source.FileID,
+	eval ConstantEvaluator,
+) (*Graph, error) {
+	return build(ctx, true, body, file, eval)
+}
+
+func build(
+	ctx context.Context,
+	cancellable bool,
+	body parser.SyntaxNode,
+	file source.FileID,
+	eval ConstantEvaluator,
+) (*Graph, error) {
+	if cancellable {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+	}
 	b := builder{
+		ctx: ctx, cancellable: cancellable,
 		graph: &Graph{}, file: file, eval: eval,
 		labels: make(map[string]ID), gotos: make(map[string][]Goto),
 	}
@@ -51,6 +79,9 @@ func BuildWithEvaluator(body parser.SyntaxNode, file source.FileID, eval Constan
 	} else {
 		part = b.statement(body)
 	}
+	if b.cancelled != nil {
+		return nil, b.cancelled
+	}
 	b.graph.Entry = part.entry
 	for _, jumps := range b.gotos {
 		b.graph.UnresolvedGotos = append(b.graph.UnresolvedGotos, jumps...)
@@ -58,14 +89,17 @@ func BuildWithEvaluator(body parser.SyntaxNode, file source.FileID, eval Constan
 	sort.Slice(b.graph.UnresolvedGotos, func(i, j int) bool {
 		return b.graph.UnresolvedGotos[i].Block < b.graph.UnresolvedGotos[j].Block
 	})
-	reachable := b.graph.Reachable()
+	reachable := b.reachable()
+	if b.cancelled != nil {
+		return nil, b.cancelled
+	}
 	for _, exit := range part.exits {
 		if reachable[exit] {
 			b.graph.FallsThrough = true
 			break
 		}
 	}
-	return b.graph
+	return b.graph, nil
 }
 
 // Reachable returns blocks reachable from Entry.
@@ -86,11 +120,46 @@ func (g *Graph) Reachable() map[ID]bool {
 }
 
 type builder struct {
-	graph  *Graph
-	file   source.FileID
-	eval   ConstantEvaluator
-	labels map[string]ID
-	gotos  map[string][]Goto
+	ctx         context.Context
+	cancellable bool
+	cancelled   error
+	steps       uint32
+	graph       *Graph
+	file        source.FileID
+	eval        ConstantEvaluator
+	labels      map[string]ID
+	gotos       map[string][]Goto
+}
+
+func (b *builder) pollCancellation() bool {
+	if !b.cancellable {
+		return false
+	}
+	b.steps++
+	if b.steps%256 != 0 {
+		return false
+	}
+	if err := b.ctx.Err(); err != nil {
+		b.cancelled = err
+		return true
+	}
+	return false
+}
+
+func (b *builder) reachable() map[ID]bool {
+	seen := make(map[ID]bool, len(b.graph.Blocks))
+	var visit func(ID)
+	visit = func(id ID) {
+		if id == 0 || seen[id] || b.cancelled != nil || b.pollCancellation() {
+			return
+		}
+		seen[id] = true
+		for _, next := range b.graph.Blocks[id-1].Successors {
+			visit(next)
+		}
+	}
+	visit(b.graph.Entry)
+	return seen
 }
 
 type fragment struct {
@@ -104,6 +173,9 @@ func (b *builder) sequence(block parser.SyntaxNode) fragment {
 	var result fragment
 	it := block.Children()
 	for it.Next() {
+		if b.cancelled != nil || b.pollCancellation() {
+			return fragment{}
+		}
 		part := b.statement(it.Node())
 		if part.entry == 0 {
 			continue
@@ -125,6 +197,9 @@ func (b *builder) sequence(block parser.SyntaxNode) fragment {
 }
 
 func (b *builder) statement(node parser.SyntaxNode) fragment {
+	if b.cancelled != nil || b.pollCancellation() {
+		return fragment{}
+	}
 	switch node.Kind() {
 	case parser.KindBlock:
 		return b.sequence(node)

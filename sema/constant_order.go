@@ -1,6 +1,7 @@
 package sema
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/pawnkit/pawn-analysis/symbol"
@@ -10,11 +11,36 @@ import (
 
 // CheckConstantOrder reports constants used before their declaration.
 func CheckConstantOrder(root parser.SyntaxNode, table *symbol.Table) []diagnostic.Diagnostic {
+	diagnostics, _ := checkConstantOrder(context.Background(), false, root, table)
+	return diagnostics
+}
+
+// CheckConstantOrderContext reports ordering errors and observes cancellation.
+func CheckConstantOrderContext(
+	ctx context.Context,
+	root parser.SyntaxNode,
+	table *symbol.Table,
+) ([]diagnostic.Diagnostic, error) {
+	return checkConstantOrder(ctx, true, root, table)
+}
+
+func checkConstantOrder(
+	ctx context.Context,
+	cancellable bool,
+	root parser.SyntaxNode,
+	table *symbol.Table,
+) ([]diagnostic.Diagnostic, error) {
+	cancel := cancellation{ctx: ctx, cancellable: cancellable}
+	if cancellable {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+	}
 	if !root.Valid() || table == nil {
-		return nil
+		return nil, nil
 	}
 	var diagnostics []diagnostic.Diagnostic
-	walkSyntax(root, func(node parser.SyntaxNode) {
+	walkSyntaxContext(root, &cancel, func(node parser.SyntaxNode) {
 		var name, expression parser.SyntaxNode
 		var ok bool
 		switch node.Kind() {
@@ -40,7 +66,7 @@ func CheckConstantOrder(root parser.SyntaxNode, table *symbol.Table) []diagnosti
 			return
 		}
 		declaration := name.Range().Span(table.File)
-		walkSyntax(expression, func(identifier parser.SyntaxNode) {
+		walkSyntaxContext(expression, &cancel, func(identifier parser.SyntaxNode) {
 			if identifier.Kind() != parser.KindIdentifier {
 				return
 			}
@@ -55,5 +81,8 @@ func CheckConstantOrder(root parser.SyntaxNode, table *symbol.Table) []diagnosti
 			))
 		})
 	})
-	return diagnostics
+	if cancel.err != nil {
+		return nil, cancel.err
+	}
+	return diagnostics, nil
 }

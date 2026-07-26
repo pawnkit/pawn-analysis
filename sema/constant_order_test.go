@@ -1,10 +1,27 @@
 package sema_test
 
 import (
+	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/pawnkit/pawn-analysis/sema"
 )
+
+func TestCheckConstantOrderContextStopsDuringTraversal(t *testing.T) {
+	text := strings.Repeat("const VALUE = LATER;\n", 2_000) + "const LATER = 1;\n"
+	file := parseCompact(t, text)
+	ctx := &delayedCancelContext{after: 1}
+
+	diagnostics, err := sema.CheckConstantOrderContext(ctx, file.Syntax(), tableFor(t, text))
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled", err)
+	}
+	if diagnostics != nil {
+		t.Fatal("cancelled constant-order checking returned partial diagnostics")
+	}
+}
 
 func TestConstantDeclarationOrder(t *testing.T) {
 	tests := []struct {

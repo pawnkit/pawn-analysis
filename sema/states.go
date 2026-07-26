@@ -1,6 +1,7 @@
 package sema
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -13,14 +14,39 @@ import (
 
 // CheckStates validates automaton and state names used by state statements.
 func CheckStates(root parser.SyntaxNode, file source.FileID) []diagnostic.Diagnostic {
+	diagnostics, _ := checkStates(context.Background(), false, root, file)
+	return diagnostics
+}
+
+// CheckStatesContext validates states and stops when ctx is cancelled.
+func CheckStatesContext(
+	ctx context.Context,
+	root parser.SyntaxNode,
+	file source.FileID,
+) ([]diagnostic.Diagnostic, error) {
+	return checkStates(ctx, true, root, file)
+}
+
+func checkStates(
+	ctx context.Context,
+	cancellable bool,
+	root parser.SyntaxNode,
+	file source.FileID,
+) ([]diagnostic.Diagnostic, error) {
+	cancel := cancellation{ctx: ctx, cancellable: cancellable}
+	if cancellable {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+	}
 	if !root.Valid() {
-		return nil
+		return nil, nil
 	}
 	automatons := make(map[string]map[string]struct{})
 	implementations := make(map[string]stateImplementation)
 	fallbacks := make(map[string]source.Span)
 	var diagnostics []diagnostic.Diagnostic
-	walkSyntax(root, func(node parser.SyntaxNode) {
+	walkSyntaxContext(root, &cancel, func(node parser.SyntaxNode) {
 		if node.Kind() != parser.KindFunctionDefinition && node.Kind() != parser.KindFunctionDeclaration {
 			return
 		}
@@ -81,6 +107,9 @@ func CheckStates(root parser.SyntaxNode, file source.FileID) []diagnostic.Diagno
 		}
 		implementations[name.Text()] = previous
 	})
+	if cancel.err != nil {
+		return nil, cancel.err
+	}
 	fallbackNames := make([]string, 0, len(fallbacks))
 	for name := range fallbacks {
 		fallbackNames = append(fallbackNames, name)
@@ -96,10 +125,14 @@ func CheckStates(root parser.SyntaxNode, file source.FileID) []diagnostic.Diagno
 			fmt.Sprintf("no states are defined for %q", name), span,
 		))
 	}
-	diagnostics = append(diagnostics, checkStateVariables(root, file)...)
+	stateVariables, err := checkStateVariables(root, file, &cancel)
+	if err != nil {
+		return nil, err
+	}
+	diagnostics = append(diagnostics, stateVariables...)
 
 	used := make(map[string]bool)
-	walkSyntax(root, func(node parser.SyntaxNode) {
+	walkSyntaxContext(root, &cancel, func(node parser.SyntaxNode) {
 		switch node.Kind() {
 		case parser.KindCallExpression:
 			if function, ok := node.Field("function"); ok && function.Kind() == parser.KindIdentifier {
@@ -111,6 +144,9 @@ func CheckStates(root parser.SyntaxNode, file source.FileID) []diagnostic.Diagno
 			}
 		}
 	})
+	if cancel.err != nil {
+		return nil, cancel.err
+	}
 	implementationNames := make([]string, 0, len(implementations))
 	for name := range implementations {
 		implementationNames = append(implementationNames, name)
@@ -139,7 +175,7 @@ func CheckStates(root parser.SyntaxNode, file source.FileID) []diagnostic.Diagno
 		}
 	}
 
-	walkSyntax(root, func(node parser.SyntaxNode) {
+	walkSyntaxContext(root, &cancel, func(node parser.SyntaxNode) {
 		if node.Kind() != parser.KindStateStatement {
 			return
 		}
@@ -174,7 +210,10 @@ func CheckStates(root parser.SyntaxNode, file source.FileID) []diagnostic.Diagno
 			))
 		}
 	})
-	return diagnostics
+	if cancel.err != nil {
+		return nil, cancel.err
+	}
+	return diagnostics, nil
 }
 
 type stateImplementation struct {
@@ -208,12 +247,19 @@ func invalidStateFunction(node parser.SyntaxNode, name string) bool {
 	return false
 }
 
-func checkStateVariables(root parser.SyntaxNode, file source.FileID) []diagnostic.Diagnostic {
+func checkStateVariables(
+	root parser.SyntaxNode,
+	file source.FileID,
+	cancel *cancellation,
+) ([]diagnostic.Diagnostic, error) {
 	var diagnostics []diagnostic.Diagnostic
 	ordinaryGlobals := make(map[string]struct{})
 	stateGlobals := make(map[string]struct{})
 	decls := root.Declarations()
 	for decls.Next() {
+		if cancel.poll() {
+			return nil, cancel.err
+		}
 		declaration := decls.Declaration()
 		if declaration.Kind() != parser.KindVariableDeclaration {
 			continue
@@ -265,7 +311,7 @@ func checkStateVariables(root parser.SyntaxNode, file source.FileID) []diagnosti
 			}
 		}
 	}
-	walkSyntax(root, func(node parser.SyntaxNode) {
+	walkSyntaxContext(root, cancel, func(node parser.SyntaxNode) {
 		if node.Kind() != parser.KindFunctionDefinition {
 			return
 		}
@@ -273,7 +319,7 @@ func checkStateVariables(root parser.SyntaxNode, file source.FileID) []diagnosti
 		if !ok {
 			return
 		}
-		walkSyntax(body, func(child parser.SyntaxNode) {
+		walkSyntaxContext(body, cancel, func(child parser.SyntaxNode) {
 			if child.Kind() != parser.KindVariableDeclarator {
 				return
 			}
@@ -288,7 +334,10 @@ func checkStateVariables(root parser.SyntaxNode, file source.FileID) []diagnosti
 			}
 		})
 	})
-	return diagnostics
+	if cancel.err != nil {
+		return nil, cancel.err
+	}
+	return diagnostics, nil
 }
 
 func variableTag(node parser.SyntaxNode) string {
@@ -334,13 +383,13 @@ func parseStateSelector(text string) (string, []string) {
 	return automaton, states
 }
 
-func walkSyntax(node parser.SyntaxNode, visit func(parser.SyntaxNode)) {
-	if !node.Valid() {
+func walkSyntaxContext(node parser.SyntaxNode, cancel *cancellation, visit func(parser.SyntaxNode)) {
+	if !node.Valid() || cancel != nil && (cancel.err != nil || cancel.poll()) {
 		return
 	}
 	visit(node)
 	it := node.Children()
 	for it.Next() {
-		walkSyntax(it.Node(), visit)
+		walkSyntaxContext(it.Node(), cancel, visit)
 	}
 }

@@ -253,16 +253,16 @@ func CompleteContext(ctx context.Context, prepared *Result, opts Options) (*Resu
 	}
 	semantics.Diagnostics = append(semantics.Diagnostics, tagDiagnostics...)
 	stage = beginStage(opts.Trace, StageSemanticStates)
-	stateDiagnostics := sema.CheckStates(prepared.Parse.Syntax(), prepared.File)
+	stateDiagnostics, err := sema.CheckStatesContext(ctx, prepared.Parse.Syntax(), prepared.File)
 	stage.end(ctx, 0)
-	if err := ctx.Err(); err != nil {
+	if err != nil {
 		return nil, err
 	}
 	semantics.Diagnostics = append(semantics.Diagnostics, stateDiagnostics...)
 	stage = beginStage(opts.Trace, StageSemanticOrder)
-	orderDiagnostics := sema.CheckConstantOrder(prepared.Parse.Syntax(), prepared.Symbols)
+	orderDiagnostics, err := sema.CheckConstantOrderContext(ctx, prepared.Parse.Syntax(), prepared.Symbols)
 	stage.end(ctx, 0)
-	if err := ctx.Err(); err != nil {
+	if err != nil {
 		return nil, err
 	}
 	semantics.Diagnostics = append(semantics.Diagnostics, orderDiagnostics...)
@@ -271,12 +271,13 @@ func CompleteContext(ctx context.Context, prepared *Result, opts Options) (*Resu
 		previousFlow = opts.Previous.flowCache
 	}
 	stage = beginStage(opts.Trace, StageSemanticCFG)
-	flows, flowDiagnostics, flowCache, reused := sema.CheckControlFlowCached(
+	flows, flowDiagnostics, flowCache, reused, err := sema.CheckControlFlowCachedContext(
+		ctx,
 		prepared.Parse.Syntax(), prepared.Symbols, previousFlow,
 	)
 	stage.end(ctx, reused)
 	semantics.Diagnostics = append(semantics.Diagnostics, flowDiagnostics...)
-	if err := ctx.Err(); err != nil {
+	if err != nil {
 		return nil, err
 	}
 

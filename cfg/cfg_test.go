@@ -1,13 +1,33 @@
 package cfg_test
 
 import (
+	"context"
+	"errors"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/pawnkit/pawn-analysis/cfg"
 	"github.com/pawnkit/pawn-analysis/sema"
 	parser "github.com/pawnkit/pawn-parser"
 	"github.com/pawnkit/pawnkit-core/source"
 )
+
+type delayedCancelContext struct {
+	checks atomic.Int32
+	after  int32
+}
+
+func (c *delayedCancelContext) Deadline() (time.Time, bool) { return time.Time{}, false }
+func (c *delayedCancelContext) Done() <-chan struct{}       { return nil }
+func (c *delayedCancelContext) Value(any) any               { return nil }
+func (c *delayedCancelContext) Err() error {
+	if c.checks.Add(1) > c.after {
+		return context.Canceled
+	}
+	return nil
+}
 
 func graphFor(t *testing.T, text string) *cfg.Graph {
 	t.Helper()
@@ -25,6 +45,27 @@ func graphFor(t *testing.T, text string) *cfg.Graph {
 		value := sema.EvalConstant(node)
 		return value.Value, value.Known
 	})
+}
+
+func TestBuildContextStopsDuringConstruction(t *testing.T) {
+	file := parser.ParseCompact(
+		[]byte("main() {"+strings.Repeat("value++;\n", 2_000)+"}"),
+		parser.ParseOptions{},
+	)
+	decls := file.Syntax().Declarations()
+	if !decls.Next() {
+		t.Fatal("function missing")
+	}
+	body, _ := decls.Declaration().Field("body")
+	ctx := &delayedCancelContext{after: 1}
+
+	graph, err := cfg.BuildWithEvaluatorContext(ctx, body, source.FileID(1), nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled", err)
+	}
+	if graph != nil {
+		t.Fatal("cancelled CFG construction returned a graph")
+	}
 }
 
 func TestReturnTerminatesFlow(t *testing.T) {

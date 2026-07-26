@@ -1,6 +1,7 @@
 package sema
 
 import (
+	"context"
 	"strconv"
 	"strings"
 
@@ -164,15 +165,46 @@ type constantCandidate struct {
 
 // ResolveConstants evaluates const declarations and enum members.
 func ResolveConstants(root parser.SyntaxNode, table *symbol.Table) map[symbol.ID]Constant {
+	values, _ := resolveConstants(context.Background(), false, root, table)
+	return values
+}
+
+// ResolveConstantsContext evaluates constants and observes cancellation.
+func ResolveConstantsContext(
+	ctx context.Context,
+	root parser.SyntaxNode,
+	table *symbol.Table,
+) (map[symbol.ID]Constant, error) {
+	return resolveConstants(ctx, true, root, table)
+}
+
+func resolveConstants(
+	ctx context.Context,
+	cancellable bool,
+	root parser.SyntaxNode,
+	table *symbol.Table,
+) (map[symbol.ID]Constant, error) {
 	values := make(map[symbol.ID]Constant)
+	cancel := cancellation{ctx: ctx, cancellable: cancellable}
+	if cancellable {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+	}
 	if !root.Valid() || table == nil {
-		return values
+		return values, nil
 	}
 	candidates := make(map[symbol.ID]constantCandidate)
-	collectConstantCandidates(root, table, candidates)
+	collectConstantCandidates(root, table, candidates, &cancel)
+	if cancel.err != nil {
+		return nil, cancel.err
+	}
 	visiting := make(map[symbol.ID]bool)
 	var value func(symbol.ID) Constant
 	value = func(id symbol.ID) Constant {
+		if cancel.err != nil || cancel.poll() {
+			return Constant{}
+		}
 		if known, ok := values[id]; ok {
 			return known
 		}
@@ -190,6 +222,9 @@ func ResolveConstants(root parser.SyntaxNode, table *symbol.Table) map[symbol.ID
 			}
 		} else {
 			result = EvalConstantResolved(candidate.expression, func(node parser.SyntaxNode) Constant {
+				if cancel.poll() {
+					return Constant{}
+				}
 				if ref, ok := referencedSymbol(table, node); ok {
 					return value(ref.ID)
 				}
@@ -203,12 +238,26 @@ func ResolveConstants(root parser.SyntaxNode, table *symbol.Table) map[symbol.ID
 		return result
 	}
 	for id := range candidates {
+		if cancel.poll() {
+			return nil, cancel.err
+		}
 		value(id)
 	}
-	return values
+	if cancel.err != nil {
+		return nil, cancel.err
+	}
+	return values, nil
 }
 
-func collectConstantCandidates(node parser.SyntaxNode, table *symbol.Table, out map[symbol.ID]constantCandidate) {
+func collectConstantCandidates(
+	node parser.SyntaxNode,
+	table *symbol.Table,
+	out map[symbol.ID]constantCandidate,
+	cancel *cancellation,
+) {
+	if cancel.err != nil || cancel.poll() {
+		return
+	}
 	if node.Kind() == parser.KindVariableDeclarator {
 		name, nameOK := node.Field("name")
 		expression, valueOK := node.Field("initializer")
@@ -219,16 +268,21 @@ func collectConstantCandidates(node parser.SyntaxNode, table *symbol.Table, out 
 		}
 	}
 	if node.Kind() == parser.KindEnumDeclaration {
-		collectEnumCandidates(node, table, out)
+		collectEnumCandidates(node, table, out, cancel)
 		return
 	}
 	it := node.Children()
 	for it.Next() {
-		collectConstantCandidates(it.Node(), table, out)
+		collectConstantCandidates(it.Node(), table, out, cancel)
 	}
 }
 
-func collectEnumCandidates(node parser.SyntaxNode, table *symbol.Table, out map[symbol.ID]constantCandidate) {
+func collectEnumCandidates(
+	node parser.SyntaxNode,
+	table *symbol.Table,
+	out map[symbol.ID]constantCandidate,
+	cancel *cancellation,
+) {
 	body, ok := node.Field("body")
 	if !ok {
 		return
@@ -236,6 +290,9 @@ func collectEnumCandidates(node parser.SyntaxNode, table *symbol.Table, out map[
 	var previous symbol.ID
 	it := body.Children()
 	for it.Next() {
+		if cancel.poll() {
+			return
+		}
 		entry := it.Node()
 		if entry.Kind() != parser.KindEnumEntry {
 			continue

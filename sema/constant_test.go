@@ -1,11 +1,28 @@
 package sema_test
 
 import (
+	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/pawnkit/pawn-analysis/sema"
 	parser "github.com/pawnkit/pawn-parser"
 )
+
+func TestResolveConstantsContextStopsDuringTraversal(t *testing.T) {
+	text := strings.Repeat("const VALUE = 1;\n", 2_000)
+	file := parseCompact(t, text)
+	ctx := &delayedCancelContext{after: 1}
+
+	values, err := sema.ResolveConstantsContext(ctx, file.Syntax(), tableFor(t, text))
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled", err)
+	}
+	if values != nil {
+		t.Fatal("cancelled constant resolution returned partial values")
+	}
+}
 
 func TestEvalConstant(t *testing.T) {
 	tests := []struct {

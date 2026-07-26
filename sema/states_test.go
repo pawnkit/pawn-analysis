@@ -1,10 +1,27 @@
 package sema_test
 
 import (
+	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/pawnkit/pawn-analysis/sema"
 )
+
+func TestCheckStatesContextStopsDuringTraversal(t *testing.T) {
+	text := strings.Repeat("Handler() <ready> {}\n", 2_000)
+	file := parseCompact(t, text)
+	ctx := &delayedCancelContext{after: 1}
+
+	diagnostics, err := sema.CheckStatesContext(ctx, file.Syntax(), 1)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled", err)
+	}
+	if diagnostics != nil {
+		t.Fatal("cancelled state checking returned partial diagnostics")
+	}
+}
 
 func TestStateChecks(t *testing.T) {
 	tests := []struct {

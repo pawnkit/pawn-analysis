@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.0 - 2026-07-26
+
+### Added
+
+- Track unchanged top-level declarations between analysis revisions.
+
 ## 0.6.2 - 2026-07-26
 
 ### Performance

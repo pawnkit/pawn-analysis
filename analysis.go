@@ -31,8 +31,9 @@ type Options struct {
 }
 
 type ReuseStats struct {
-	ControlFlow int
-	Tags        int
+	ControlFlow  int
+	Declarations int
+	Tags         int
 }
 
 // Result is one immutable file analysis.
@@ -42,6 +43,7 @@ type Result struct {
 	Preprocess      *preprocess.Result
 	Parse           *parser.CompactFile
 	ExpandedParse   *parser.CompactFile
+	Declarations    parser.DeclarationIndex
 	Symbols         *symbol.Table
 	ExpandedSymbols *symbol.Table
 	Semantics       sema.Result
@@ -149,15 +151,39 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 	diagnostics = append(diagnostics, table.Diagnostics...)
 	diagnostics = append(diagnostics, expandedTableDiagnostics(expandedTable, fileID)...)
 	addDiagnosticDocs(diagnostics)
+	declarations := parser.BuildDeclarationIndex(parsed)
 	prepared := &Result{
 		File: fileID, Registry: registry, Preprocess: pre, Parse: parsed, ExpandedParse: expanded,
-		Symbols: table, ExpandedSymbols: expandedTable,
+		Declarations: declarations, Symbols: table, ExpandedSymbols: expandedTable,
 		Diagnostics: diagnostics, baseDiagnostics: diagnostics,
+	}
+	if opts.Previous != nil {
+		prepared.Reuse.Declarations = reusedDeclarations(opts.Previous.Declarations, declarations)
 	}
 	if opts.SkipSemantics {
 		return retainExpanded(prepared, opts.RetainExpanded), nil
 	}
 	return CompleteContext(ctx, prepared, opts)
+}
+
+func reusedDeclarations(previous, current parser.DeclarationIndex) int {
+	if !previous.Reliable() || !current.Reliable() {
+		return 0
+	}
+	fingerprints := make(map[[32]byte][32]byte, previous.Len())
+	for position := range previous.Len() {
+		item, _ := previous.At(position)
+		fingerprints[item.Identity] = item.Fingerprint
+	}
+	reused := 0
+	for position := range current.Len() {
+		item, _ := current.At(position)
+		fingerprint, found := fingerprints[item.Identity]
+		if found && fingerprint == item.Fingerprint {
+			reused++
+		}
+	}
+	return reused
 }
 
 // CompleteContext runs semantics on an existing parse result.

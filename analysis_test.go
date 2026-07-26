@@ -116,6 +116,31 @@ func TestAnalyzePipeline(t *testing.T) {
 	}
 }
 
+func TestAnalyzeTracksUnchangedDeclarations(t *testing.T) {
+	before := analysis.Analyze([]byte("stock Keep() { return 1; }\nstock Edit() { return 1; }\n"), analysis.Options{})
+	after := analysis.Analyze(
+		[]byte("stock Keep() { return 1; }\nstock Edit() { return 2; }\n"),
+		analysis.Options{Previous: before},
+	)
+	if !after.Declarations.Reliable() {
+		t.Fatal("declaration boundaries are not reliable")
+	}
+	if after.Reuse.Declarations != 1 {
+		t.Fatalf("reused declarations = %d, want 1", after.Reuse.Declarations)
+	}
+}
+
+func TestAnalyzeDoesNotReuseMalformedDeclarations(t *testing.T) {
+	before := analysis.Analyze([]byte("stock Keep() {}\n"), analysis.Options{})
+	after := analysis.Analyze([]byte("stock Broken( {\n"), analysis.Options{Previous: before})
+	if after.Declarations.Reliable() {
+		t.Fatal("malformed declaration boundaries are reliable")
+	}
+	if after.Reuse.Declarations != 0 {
+		t.Fatalf("reused declarations = %d, want 0", after.Reuse.Declarations)
+	}
+}
+
 func TestAnalyzeRootParseMatchesDirectParseCompact(t *testing.T) {
 	text := []byte("#define TARGET Helper\nmain() { TARGET(); new x[10]; }\nHelper() { return 1; }\n")
 	result := analysis.Analyze(text, analysis.Options{URI: source.FileURI("test.pwn")})

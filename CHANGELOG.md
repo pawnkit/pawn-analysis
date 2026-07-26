@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.19 - 2026-07-26
+
+### Changed
+
+- Indexed declaration and reference spans used by semantic checks.
+
 ## 0.1.18 - 2026-07-25
 
 ### Added

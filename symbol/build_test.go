@@ -62,6 +62,27 @@ func TestDeclareThenReference(t *testing.T) {
 	}
 }
 
+func TestSpanIndexes(t *testing.T) {
+	table, _ := buildTable(t, "new value;\nmain() { return value; }\n")
+	declared, ok := findSymbol(table, "value")
+	if !ok {
+		t.Fatal("missing value declaration")
+	}
+	if got, found := table.DeclarationAt(declared.Span); !found || got.ID != declared.ID {
+		t.Fatalf("declaration lookup = %+v, %v", got, found)
+	}
+	for _, reference := range table.References {
+		if reference.Name != "value" {
+			continue
+		}
+		if got, found := table.ReferencedAt(reference.Span); !found || got.ID != declared.ID {
+			t.Fatalf("reference lookup = %+v, %v", got, found)
+		}
+		return
+	}
+	t.Fatal("missing value reference")
+}
+
 func TestRedeclarationInSameScope(t *testing.T) {
 	src := "stock DoWork(value) { new total = 0; new total = 1; return total + value; }\n"
 	table, _ := buildTable(t, src)

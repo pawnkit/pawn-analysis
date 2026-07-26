@@ -25,7 +25,23 @@ func BuildMapped(root parser.SyntaxNode, file source.FileID, files func(uint32) 
 		b.walk(fileScope, decls.Declaration())
 	}
 	b.resolveFileReferences(fileScope)
+	b.table.buildSpanIndexes()
 	return b.table
+}
+
+func (t *Table) buildSpanIndexes() {
+	t.declarations = make(map[source.Span]ID, len(t.Symbols))
+	for _, item := range t.Symbols {
+		if t.declarations[item.Span] == 0 {
+			t.declarations[item.Span] = item.ID
+		}
+	}
+	t.references = make(map[source.Span]ID, len(t.References))
+	for _, reference := range t.References {
+		if reference.Resolved != 0 && t.references[reference.Span] == 0 {
+			t.references[reference.Span] = reference.Resolved
+		}
+	}
 }
 
 type builder struct {

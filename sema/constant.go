@@ -258,13 +258,7 @@ func collectEnumCandidates(node parser.SyntaxNode, table *symbol.Table, out map[
 }
 
 func referencedSymbol(table *symbol.Table, node parser.SyntaxNode) (symbol.Symbol, bool) {
-	span := node.Range().Span(table.File)
-	for _, ref := range table.References {
-		if ref.Span == span && ref.Resolved != 0 {
-			return table.Symbol(ref.Resolved)
-		}
-	}
-	return symbol.Symbol{}, false
+	return table.ReferencedAt(node.Range().Span(table.File))
 }
 
 func boolCell(value bool) int64 {

@@ -86,11 +86,5 @@ func unreachableDiagnostics(graph *cfg.Graph) []diagnostic.Diagnostic {
 }
 
 func declaredSymbol(table *symbol.Table, node parser.SyntaxNode) (symbol.Symbol, bool) {
-	span := node.Range().Span(table.File)
-	for _, item := range table.Symbols {
-		if item.Span == span {
-			return item, true
-		}
-	}
-	return symbol.Symbol{}, false
+	return table.DeclarationAt(node.Range().Span(table.File))
 }

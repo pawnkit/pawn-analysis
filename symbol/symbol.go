@@ -128,6 +128,9 @@ type Table struct {
 	Scopes      []Scope
 	References  []Reference
 	Diagnostics []diagnostic.Diagnostic
+
+	declarations map[source.Span]ID
+	references   map[source.Span]ID
 }
 
 // Symbol looks up a symbol by ID.
@@ -144,6 +147,22 @@ func (t *Table) Scope(id ID) (Scope, bool) {
 		return Scope{}, false
 	}
 	return t.Scopes[id-1], true
+}
+
+// DeclarationAt returns the first symbol declared at span.
+func (t *Table) DeclarationAt(span source.Span) (Symbol, bool) {
+	if id := t.declarations[span]; id != 0 {
+		return t.Symbol(id)
+	}
+	return Symbol{}, false
+}
+
+// ReferencedAt returns the symbol resolved by the first reference at span.
+func (t *Table) ReferencedAt(span source.Span) (Symbol, bool) {
+	if id := t.references[span]; id != 0 {
+		return t.Symbol(id)
+	}
+	return Symbol{}, false
 }
 
 // Lookup resolves name starting at scope and walking outward through

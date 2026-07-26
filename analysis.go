@@ -157,7 +157,7 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 	}
 	if needsExpanded {
 		stage = beginStage(opts.Trace, StageSymbolsExpanded)
-		expandedTable, err = symbol.BuildMappedDeclarationsContext(ctx, expanded.Syntax(), fileID, mapFile)
+		expandedTable, err = symbol.BuildMappedNavigationContext(ctx, expanded.Syntax(), fileID, mapFile)
 		if err != nil {
 			stage.end(ctx, 0)
 			return nil, err

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.14.1 - 2026-07-26
+
+### Fixed
+
+- Keep active-file locals and references in the expanded navigation table.
+
 ## 0.14.0 - 2026-07-26
 
 ### Performance

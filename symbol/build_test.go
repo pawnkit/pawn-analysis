@@ -392,3 +392,22 @@ func TestBuildMappedDeclarationsSkipsFunctionBodies(t *testing.T) {
 		t.Fatalf("references = %d, want 0", len(table.References))
 	}
 }
+
+func TestBuildMappedNavigationKeepsActiveFileDetails(t *testing.T) {
+	file := parser.ParseCompact(
+		[]byte("stock Helper(value) { new local = value; return local; }\n"),
+		parser.ParseOptions{},
+	)
+	table, err := symbol.BuildMappedNavigationContext(
+		context.Background(), file.Syntax(), source.FileID(1), nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, found := findSymbol(table, "local"); !found {
+		t.Fatal("active-file local missing from navigation table")
+	}
+	if len(table.References) != 2 {
+		t.Fatalf("references = %d, want 2", len(table.References))
+	}
+}

@@ -73,8 +73,14 @@ func (e *engine) handleInclude(f *frame, hash token.Token, optional bool) {
 			inc.HasChildFile = true
 
 			e.includeStack[uri] = true
+			tokens, err := e.opts.TokenCache.tokenizeContext(e.ctx, e.cancellable, uri, content)
+			if err != nil {
+				e.cancelled = err
+				e.stopped = true
+				return
+			}
 			child := &frame{
-				fileIndex: childIndex, source: content, toks: e.opts.TokenCache.tokenize(uri, content),
+				fileIndex: childIndex, source: content, toks: tokens,
 				uri: uri, depth: f.depth + 1, lineStart: true,
 			}
 			e.run(child)

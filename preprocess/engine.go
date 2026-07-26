@@ -343,7 +343,16 @@ func run(src []byte, opts Options, ctx context.Context, cancellable bool) (*Resu
 		e.macros.define(Macro{Name: name, Kind: MacroObjectLike, Body: tokenizeBody(value)})
 	}
 
-	originalTokens := lexer.Tokenize(src)
+	var originalTokens []token.Token
+	var err error
+	if cancellable {
+		originalTokens, err = lexer.TokenizeContext(ctx, src)
+	} else {
+		originalTokens = lexer.Tokenize(src)
+	}
+	if err != nil {
+		return nil, err
+	}
 	outputCapacity := min(len(originalTokens), opts.MaxOutputTokens+1)
 	e.out = make([]token.Token, 0, outputCapacity)
 	e.expandedBuf = make([]byte, 0, len(src))

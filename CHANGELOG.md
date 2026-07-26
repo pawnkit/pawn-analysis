@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.13.1 - 2026-07-26
+
+### Performance
+
+- Stop tokenizing root and included files after cancellation.
+
 ## 0.13.0 - 2026-07-26
 
 ### Added

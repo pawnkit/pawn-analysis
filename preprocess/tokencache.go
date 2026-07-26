@@ -1,6 +1,7 @@
 package preprocess
 
 import (
+	"context"
 	"crypto/sha256"
 	"sync"
 
@@ -23,17 +24,39 @@ func NewTokenCache() *TokenCache {
 }
 
 func (c *TokenCache) tokenize(uri string, content []byte) []token.Token {
+	tokens, _ := c.tokenizeContext(context.Background(), false, uri, content)
+	return tokens
+}
+
+func (c *TokenCache) tokenizeContext(
+	ctx context.Context,
+	cancellable bool,
+	uri string,
+	content []byte,
+) ([]token.Token, error) {
 	if c == nil {
-		return lexer.Tokenize(content)
+		if cancellable {
+			return lexer.TokenizeContext(ctx, content)
+		}
+		return lexer.Tokenize(content), nil
 	}
 	hash := sha256.Sum256(content)
 	c.mu.RLock()
 	entry, ok := c.entries[uri]
 	c.mu.RUnlock()
 	if ok && entry.hash == hash {
-		return entry.tokens
+		return entry.tokens, nil
 	}
-	tokens := lexer.Tokenize(content)
+	var tokens []token.Token
+	var err error
+	if cancellable {
+		tokens, err = lexer.TokenizeContext(ctx, content)
+	} else {
+		tokens = lexer.Tokenize(content)
+	}
+	if err != nil {
+		return nil, err
+	}
 	c.mu.Lock()
 	if c.entries == nil {
 		c.entries = make(map[string]tokenCacheEntry)
@@ -44,5 +67,5 @@ func (c *TokenCache) tokenize(uri string, content []byte) []token.Token {
 		c.entries[uri] = tokenCacheEntry{hash: hash, tokens: tokens}
 	}
 	c.mu.Unlock()
-	return tokens
+	return tokens, nil
 }

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.0 - 2026-07-26
+
+### Changed
+
+- Stop original and expanded parsing when editor analysis is cancelled.
+
 ## 0.8.1 - 2026-07-26
 
 ### Testing

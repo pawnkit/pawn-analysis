@@ -101,17 +101,21 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		return fileID
 	}
 	var parsed *parser.CompactFile
+	var parsedErr error
 	var table *symbol.Table
 	var expanded *parser.CompactFile
+	var expandedErr error
 	var expandedTable *symbol.Table
 	parseOriginal := func() {
 		current := beginStage(opts.Trace, StageParseOriginal)
-		parsed = parser.ParseTokensCompact(text, pre.OriginalTokens, parser.ParseOptions{})
+		parsed, parsedErr = parser.ParseTokensCompactContext(ctx, text, pre.OriginalTokens, parser.ParseOptions{})
 		current.end(ctx, 0)
 	}
 	parseExpanded := func() {
 		current := beginStage(opts.Trace, StageParseExpanded)
-		expanded = parser.ParseTokensCompact(pre.ExpandedSource, pre.ExpandedTokens, parser.ParseOptions{})
+		expanded, expandedErr = parser.ParseTokensCompactContext(
+			ctx, pre.ExpandedSource, pre.ExpandedTokens, parser.ParseOptions{},
+		)
 		current.end(ctx, 0)
 	}
 	needsExpanded := opts.RetainExpanded || opts.Includes != nil
@@ -130,6 +134,12 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		if needsExpanded {
 			parseExpanded()
 		}
+	}
+	if parsedErr != nil {
+		return nil, parsedErr
+	}
+	if expandedErr != nil {
+		return nil, expandedErr
 	}
 	stage = beginStage(opts.Trace, StageSymbolsOriginal)
 	table = symbol.Build(parsed.Syntax(), fileID)

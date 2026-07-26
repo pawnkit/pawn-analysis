@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	analysis "github.com/pawnkit/pawn-analysis"
 	"github.com/pawnkit/pawn-analysis/preprocess"
@@ -23,6 +25,30 @@ func TestAnalyzeContextCancelled(t *testing.T) {
 	if result != nil || !errors.Is(err, context.Canceled) {
 		t.Fatalf("AnalyzeContext() = (%v, %v), want cancellation", result, err)
 	}
+}
+
+func TestAnalyzeContextStopsDuringParsing(t *testing.T) {
+	ctx := &cancelAfterChecksContext{}
+	ctx.remaining.Store(3)
+	result, err := analysis.AnalyzeContext(ctx, syntheticGlobalGamemode(5000), analysis.Options{})
+	if result != nil || !errors.Is(err, context.Canceled) {
+		t.Fatalf("AnalyzeContext() = (%v, %v), want cancellation", result, err)
+	}
+}
+
+type cancelAfterChecksContext struct {
+	remaining atomic.Int32
+}
+
+func (c *cancelAfterChecksContext) Deadline() (time.Time, bool) { return time.Time{}, false }
+func (c *cancelAfterChecksContext) Done() <-chan struct{}       { return nil }
+func (c *cancelAfterChecksContext) Value(any) any               { return nil }
+
+func (c *cancelAfterChecksContext) Err() error {
+	if c.remaining.Add(-1) < 0 {
+		return context.Canceled
+	}
+	return nil
 }
 
 func TestAnalyzeTraceReportsStages(t *testing.T) {

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.1 - 2026-07-26
+
+### Changed
+
+- Limited tag-result caching to functions large enough to repay its memory
+  cost.
+
 ## 0.5.0 - 2026-07-26
 
 ### Added

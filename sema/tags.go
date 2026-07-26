@@ -25,6 +25,8 @@ type cachedTags struct {
 	diagnostics []diagnostic.Diagnostic
 }
 
+const tagCacheMinimumBytes = 128
+
 // CheckTags reports confirmed assignment and return tag mismatches.
 func CheckTags(root parser.SyntaxNode, table *symbol.Table, resolver Resolver) []diagnostic.Diagnostic {
 	diagnostics, _, _ := CheckTagsCached(root, table, resolver, nil, "")
@@ -75,8 +77,12 @@ func CheckTagsCached(
 			continue
 		}
 		stableID, stable := table.StableSymbolID(callable.ID)
-		bodyHash := sha256.Sum256(declaration.Bytes())
-		if canReuse && stable {
+		cacheable := stable && len(declaration.Bytes()) >= tagCacheMinimumBytes
+		var bodyHash [32]byte
+		if cacheable {
+			bodyHash = sha256.Sum256(declaration.Bytes())
+		}
+		if canReuse && cacheable {
 			if cached, found := previous.entries[stableID]; found && cached.body == bodyHash {
 				items := shiftTagDiagnostics(cached.diagnostics, table.File, callable.Span.Start-cached.start)
 				diagnostics = append(diagnostics, items...)
@@ -90,7 +96,7 @@ func CheckTagsCached(
 		c := tagChecker{table: table, resolver: resolver}
 		c.walk(declaration, "")
 		diagnostics = append(diagnostics, c.diagnostics...)
-		if stable {
+		if cacheable {
 			next.entries[stableID] = cachedTags{
 				body: bodyHash, start: callable.Span.Start,
 				diagnostics: append([]diagnostic.Diagnostic(nil), c.diagnostics...),

@@ -1,12 +1,32 @@
 package symbol_test
 
 import (
+	"context"
+	"errors"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/pawnkit/pawn-analysis/symbol"
 	parser "github.com/pawnkit/pawn-parser"
 	"github.com/pawnkit/pawnkit-core/source"
 )
+
+type delayedCancelContext struct {
+	checks atomic.Int32
+	after  int32
+}
+
+func (c *delayedCancelContext) Deadline() (time.Time, bool) { return time.Time{}, false }
+func (c *delayedCancelContext) Done() <-chan struct{}       { return nil }
+func (c *delayedCancelContext) Value(any) any               { return nil }
+func (c *delayedCancelContext) Err() error {
+	if c.checks.Add(1) > c.after {
+		return context.Canceled
+	}
+	return nil
+}
 
 func buildTable(t *testing.T, src string) (*symbol.Table, source.FileID) {
 	t.Helper()
@@ -331,5 +351,21 @@ func TestMalformedSourceDoesNotPanic(t *testing.T) {
 				t.Fatalf("Build returned nil")
 			}
 		})
+	}
+}
+
+func TestBuildContextStopsDuringTraversal(t *testing.T) {
+	file := parser.ParseCompact(
+		[]byte(strings.Repeat("stock Work(value) { return value; }\n", 2_000)),
+		parser.ParseOptions{},
+	)
+	ctx := &delayedCancelContext{after: 1}
+
+	table, err := symbol.BuildContext(ctx, file.Syntax(), source.FileID(1))
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled", err)
+	}
+	if table != nil {
+		t.Fatal("cancelled symbol construction returned a table")
 	}
 }

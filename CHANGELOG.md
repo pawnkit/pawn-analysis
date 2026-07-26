@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.0 - 2026-07-26
+
+### Added
+
+- Allow symbol construction and indexing to stop during cancellation.
+
 ## 0.10.1 - 2026-07-26
 
 ### Performance

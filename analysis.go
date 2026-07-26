@@ -142,7 +142,11 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		return nil, expandedErr
 	}
 	stage = beginStage(opts.Trace, StageSymbolsOriginal)
-	table = symbol.Build(parsed.Syntax(), fileID)
+	table, err = symbol.BuildContext(ctx, parsed.Syntax(), fileID)
+	if err != nil {
+		stage.end(ctx, 0)
+		return nil, err
+	}
 	table.Diagnostics = removeMacroDeclarationDiagnostics(table.Diagnostics, pre)
 	stage.end(ctx, 0)
 	if err := ctx.Err(); err != nil {
@@ -150,7 +154,11 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 	}
 	if needsExpanded {
 		stage = beginStage(opts.Trace, StageSymbolsExpanded)
-		expandedTable = symbol.BuildMapped(expanded.Syntax(), fileID, mapFile)
+		expandedTable, err = symbol.BuildMappedContext(ctx, expanded.Syntax(), fileID, mapFile)
+		if err != nil {
+			stage.end(ctx, 0)
+			return nil, err
+		}
 		expandedTable.Diagnostics = removeMacroDeclarationDiagnostics(expandedTable.Diagnostics, pre)
 		stage.end(ctx, 0)
 		if err := ctx.Err(); err != nil {

@@ -1,6 +1,7 @@
 package symbol
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -15,39 +16,101 @@ func Build(root parser.SyntaxNode, file source.FileID) *Table {
 	return BuildMapped(root, file, nil)
 }
 
+// BuildContext creates a symbol table and stops when ctx is cancelled.
+func BuildContext(ctx context.Context, root parser.SyntaxNode, file source.FileID) (*Table, error) {
+	return build(ctx, true, root, file, nil)
+}
+
 // BuildMapped maps token provenance file indexes to shared file IDs.
 func BuildMapped(root parser.SyntaxNode, file source.FileID, files func(uint32) source.FileID) *Table {
-	b := &builder{file: file, files: files, table: &Table{File: file}}
+	table, _ := build(context.Background(), false, root, file, files)
+	return table
+}
+
+// BuildMappedContext maps token origins and stops when ctx is cancelled.
+func BuildMappedContext(
+	ctx context.Context,
+	root parser.SyntaxNode,
+	file source.FileID,
+	files func(uint32) source.FileID,
+) (*Table, error) {
+	return build(ctx, true, root, file, files)
+}
+
+func build(
+	ctx context.Context,
+	cancellable bool,
+	root parser.SyntaxNode,
+	file source.FileID,
+	files func(uint32) source.FileID,
+) (*Table, error) {
+	if cancellable {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+	}
+	b := &builder{ctx: ctx, cancellable: cancellable, file: file, files: files, table: &Table{File: file}}
 	fileScope := b.newScope(ScopeFile, 0)
 
 	decls := root.Declarations()
 	for decls.Next() {
 		b.walk(fileScope, decls.Declaration())
-	}
-	b.resolveFileReferences(fileScope)
-	b.table.buildSpanIndexes()
-	return b.table
-}
-
-func (t *Table) buildSpanIndexes() {
-	t.declarations = make(map[source.Span]ID, len(t.Symbols))
-	for _, item := range t.Symbols {
-		if t.declarations[item.Span] == 0 {
-			t.declarations[item.Span] = item.ID
+		if b.cancelled != nil {
+			return nil, b.cancelled
 		}
 	}
-	t.references = make(map[source.Span]ID, len(t.References))
-	for _, reference := range t.References {
-		if reference.Resolved != 0 && t.references[reference.Span] == 0 {
-			t.references[reference.Span] = reference.Resolved
+	b.resolveFileReferences(fileScope)
+	b.buildSpanIndexes()
+	if b.cancelled != nil {
+		return nil, b.cancelled
+	}
+	return b.table, nil
+}
+
+func (b *builder) buildSpanIndexes() {
+	b.table.declarations = make(map[source.Span]ID, len(b.table.Symbols))
+	for _, item := range b.table.Symbols {
+		if b.pollCancellation() {
+			return
+		}
+		if b.table.declarations[item.Span] == 0 {
+			b.table.declarations[item.Span] = item.ID
+		}
+	}
+	b.table.references = make(map[source.Span]ID, len(b.table.References))
+	for _, reference := range b.table.References {
+		if b.pollCancellation() {
+			return
+		}
+		if reference.Resolved != 0 && b.table.references[reference.Span] == 0 {
+			b.table.references[reference.Span] = reference.Resolved
 		}
 	}
 }
 
 type builder struct {
-	file  source.FileID
-	files func(uint32) source.FileID
-	table *Table
+	ctx         context.Context
+	cancellable bool
+	cancelled   error
+	steps       uint32
+	file        source.FileID
+	files       func(uint32) source.FileID
+	table       *Table
+}
+
+func (b *builder) pollCancellation() bool {
+	if !b.cancellable {
+		return false
+	}
+	b.steps++
+	if b.steps%256 != 0 {
+		return false
+	}
+	if err := b.ctx.Err(); err != nil {
+		b.cancelled = err
+		return true
+	}
+	return false
 }
 
 func (b *builder) newScope(kind ScopeKind, parent ID) ID {
@@ -99,6 +162,9 @@ func isForwardPair(a, b Kind) bool {
 func (b *builder) resolveFileReferences(fileScope ID) {
 	file := b.table.Scopes[fileScope-1]
 	for i := range b.table.References {
+		if b.pollCancellation() {
+			return
+		}
 		ref := &b.table.References[i]
 		if ref.Resolved == 0 {
 			ref.Resolved = file.Names[ref.Name]
@@ -143,7 +209,7 @@ func extractTag(n parser.SyntaxNode) string {
 }
 
 func (b *builder) walk(scope ID, n parser.SyntaxNode) {
-	if !n.Valid() {
+	if !n.Valid() || b.cancelled != nil || b.pollCancellation() {
 		return
 	}
 	switch n.Kind() {
@@ -220,6 +286,9 @@ func (b *builder) walkVariableDecl(scope ID, n parser.SyntaxNode) {
 
 	it := n.Children()
 	for it.Next() {
+		if b.pollCancellation() {
+			return
+		}
 		d := it.Node()
 		if d.Kind() != parser.KindVariableDeclarator {
 			continue
@@ -307,6 +376,9 @@ func (b *builder) walkFunction(scope ID, n parser.SyntaxNode) {
 	if params, ok := n.Field("parameters"); ok {
 		it := params.Children()
 		for it.Next() {
+			if b.pollCancellation() {
+				return
+			}
 			b.walkParameter(funcScope, it.Node())
 		}
 	}
@@ -378,6 +450,9 @@ func (b *builder) walkEnum(scope ID, n parser.SyntaxNode) {
 	}
 	it := body.Children()
 	for it.Next() {
+		if b.pollCancellation() {
+			return
+		}
 		entry := it.Node()
 		if entry.Kind() != parser.KindEnumEntry {
 			continue

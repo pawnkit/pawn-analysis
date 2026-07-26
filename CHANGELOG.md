@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.1 - 2026-07-26
+
+### Testing
+
+- Compare persistent snapshot results with clean analysis across edit sequences.
+
+### Fixed
+
+- Disable semantic reuse when syntax recovery cannot prove safe boundaries.
+
 ## 0.8.0 - 2026-07-26
 
 ### Added

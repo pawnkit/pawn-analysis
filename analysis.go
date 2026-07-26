@@ -206,7 +206,7 @@ func CompleteContext(ctx context.Context, prepared *Result, opts Options) (*Resu
 	semantics := sema.CheckNames(prepared.Symbols, resolver)
 	stage.end(ctx, 0)
 	var previousTags *sema.TagCache
-	if opts.Previous != nil {
+	if reusableDeclarations(prepared, opts.Previous) {
 		previousTags = opts.Previous.tagCache
 	}
 	stage = beginStage(opts.Trace, StageSemanticTags)
@@ -224,7 +224,7 @@ func CompleteContext(ctx context.Context, prepared *Result, opts Options) (*Resu
 	stage.end(ctx, 0)
 	semantics.Diagnostics = append(semantics.Diagnostics, orderDiagnostics...)
 	var previousFlow *sema.FlowCache
-	if opts.Previous != nil {
+	if reusableDeclarations(prepared, opts.Previous) {
 		previousFlow = opts.Previous.flowCache
 	}
 	stage = beginStage(opts.Trace, StageSemanticCFG)
@@ -247,6 +247,11 @@ func CompleteContext(ctx context.Context, prepared *Result, opts Options) (*Resu
 	result.Diagnostics = append(append([]diagnostic.Diagnostic(nil), prepared.baseDiagnostics...), semantics.Diagnostics...)
 	addDiagnosticDocs(result.Diagnostics)
 	return retainExpanded(&result, opts.RetainExpanded), nil
+}
+
+func reusableDeclarations(current, previous *Result) bool {
+	return current != nil && previous != nil &&
+		current.Declarations.Reliable() && previous.Declarations.Reliable()
 }
 
 func retainExpanded(result *Result, retain bool) *Result {

@@ -140,6 +140,9 @@ func TestAnalyzeDoesNotReuseMalformedDeclarations(t *testing.T) {
 	if after.Reuse.Declarations != 0 {
 		t.Fatalf("reused declarations = %d, want 0", after.Reuse.Declarations)
 	}
+	if after.Reuse.ControlFlow != 0 || after.Reuse.Tags != 0 {
+		t.Fatalf("malformed reuse = %+v", after.Reuse)
+	}
 }
 
 func TestAnalyzeRootParseMatchesDirectParseCompact(t *testing.T) {

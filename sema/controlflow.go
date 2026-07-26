@@ -76,7 +76,7 @@ func CheckControlFlowCached(
 		if stable {
 			if cached, ok := previous.entries[stableID]; ok {
 				bodyHash = sha256.Sum256(body.Bytes())
-				graph = reuseFlow(cached, callable, bodyHash, constantHash, table.File)
+				graph = reuseFlow(cached, source.Offset(body.Range().Start), bodyHash, constantHash, table.File)
 				if graph != nil {
 					reused++
 				}
@@ -102,7 +102,7 @@ func CheckControlFlowCached(
 					bodyHash = sha256.Sum256(body.Bytes())
 				}
 				next.entries[stableID] = cachedFlow{
-					body: bodyHash, constants: constantHash, start: callable.Span.Start, graph: graph,
+					body: bodyHash, constants: constantHash, start: source.Offset(body.Range().Start), graph: graph,
 				}
 			}
 		}
@@ -126,14 +126,14 @@ func CheckControlFlowCached(
 
 func reuseFlow(
 	cached cachedFlow,
-	callable symbol.Symbol,
+	bodyStart source.Offset,
 	body, constants [32]byte,
 	file source.FileID,
 ) *cfg.Graph {
 	if cached.body != body || cached.constants != constants {
 		return nil
 	}
-	return shiftGraph(cached.graph, file, callable.Span.Start-cached.start)
+	return shiftGraph(cached.graph, file, bodyStart-cached.start)
 }
 
 func shiftGraph(graph *cfg.Graph, file source.FileID, delta source.Offset) *cfg.Graph {

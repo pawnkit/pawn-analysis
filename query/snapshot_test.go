@@ -113,6 +113,37 @@ func TestSnapshotReusesUnchangedFunctionControlFlow(t *testing.T) {
 	}
 }
 
+func TestSnapshotMovesReusedControlFlowWithBody(t *testing.T) {
+	uri := source.FileURI("main.pwn")
+	before := []byte("stock Value() { new result = 1; result++; result++; result++; return result; }\n")
+	snapshot := New(Document{URI: uri, Text: before, Version: 1})
+	if _, err := snapshot.Analyze(context.Background(), uri, analysis.Options{}); err != nil {
+		t.Fatal(err)
+	}
+
+	after := []byte("stock Value()\n{ new result = 1; result++; result++; result++; return result; }\n")
+	next, ok := snapshot.Update(Document{URI: uri, Text: after, Version: 2})
+	if !ok {
+		t.Fatal("update rejected")
+	}
+	got, err := next.Analyze(context.Background(), uri, analysis.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := New(Document{URI: uri, Text: after, Version: 2}).Analyze(
+		context.Background(), uri, analysis.Options{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Reuse.ControlFlow != 1 {
+		t.Fatalf("reused CFGs = %d, want 1", got.Reuse.ControlFlow)
+	}
+	if !reflect.DeepEqual(got.ControlFlow, want.ControlFlow) {
+		t.Fatal("reused CFG spans differ from clean analysis")
+	}
+}
+
 func TestSnapshotAnalyzesPersistentBuffer(t *testing.T) {
 	uri := source.FileURI("/workspace/main.pwn")
 	buffer := source.NewTextBuffer([]byte("main() { return 1; }\n"))

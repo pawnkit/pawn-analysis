@@ -225,6 +225,7 @@ type analysisSummary struct {
 	Symbols        []symbol.Symbol
 	References     []symbol.Reference
 	Unknown        []symbol.Reference
+	ControlFlow    []sema.FunctionFlow
 	Diagnostics    []diagnostic.Diagnostic
 }
 
@@ -264,8 +265,67 @@ func summarizeAnalysis(result *analysis.Result) analysisSummary {
 		Symbols:        result.Symbols.Symbols,
 		References:     result.Symbols.References,
 		Unknown:        result.Semantics.Unknown,
+		ControlFlow:    result.ControlFlow,
 		Diagnostics:    result.Diagnostics,
 	}
+}
+
+func FuzzPersistentSnapshotMatchesCleanAnalysis(f *testing.F) {
+	f.Add([]byte{0, 3, 1, 8, 2, 12, 0, 5})
+	f.Add([]byte{2, 0, 2, 1, 2, 2, 1, 3})
+	f.Fuzz(func(t *testing.T, operations []byte) {
+		if len(operations) > 48 {
+			operations = operations[:48]
+		}
+		uri := source.FileURI("fuzz.pwn")
+		buffer := source.NewTextBuffer([]byte("stock Add(value) { return value + 1; }\nmain() { return Add(2); }\n"))
+		snapshot := New(Document{URI: uri, Buffer: buffer, Version: 1})
+		if _, err := snapshot.Analyze(context.Background(), uri, analysis.Options{}); err != nil {
+			t.Fatal(err)
+		}
+
+		version := int64(1)
+		replacements := [...]string{"x", " ", ";", "\n", "0"}
+		for index := 0; index+1 < len(operations); index += 2 {
+			position := int(operations[index]) % (buffer.Len() + 1)
+			end := position
+			replacement := replacements[int(operations[index+1])%len(replacements)]
+			switch operations[index] % 3 {
+			case 1:
+				if position < buffer.Len() {
+					end = position + 1
+				}
+				replacement = ""
+			case 2:
+				if position < buffer.Len() {
+					end = position + 1
+				}
+			}
+
+			var err error
+			buffer, err = buffer.Apply(source.Offset(position), source.Offset(end), replacement)
+			if err != nil {
+				t.Fatal(err)
+			}
+			version++
+			next, accepted := snapshot.UpdateOwned(Document{URI: uri, Buffer: buffer, Version: version})
+			if !accepted {
+				t.Fatal("snapshot rejected a new revision")
+			}
+			got, err := next.Analyze(context.Background(), uri, analysis.Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, err := New(Document{URI: uri, Buffer: buffer, Version: version}).Analyze(
+				context.Background(), uri, analysis.Options{},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertAnalysisEqual(t, got, want)
+			snapshot = next
+		}
+	})
 }
 
 func summarizeWorkspace(result *WorkspaceResult) []analysisSummary {

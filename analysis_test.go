@@ -83,6 +83,27 @@ func TestAnalyzeTraceReportsStages(t *testing.T) {
 	}
 }
 
+func TestAnalyzeContextSkipsSemanticStagesAfterCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	var stages []analysis.Stage
+	result, err := analysis.AnalyzeContext(ctx, []byte("main() { return 1; }"), analysis.Options{
+		Trace: func(event analysis.TraceEvent) {
+			stages = append(stages, event.Stage)
+			if event.Stage == analysis.StageSemanticNames {
+				cancel()
+			}
+		},
+	})
+	if result != nil || !errors.Is(err, context.Canceled) {
+		t.Fatalf("AnalyzeContext() = (%v, %v), want cancellation", result, err)
+	}
+	for _, stage := range stages {
+		if stage == analysis.StageSemanticTags {
+			t.Fatal("tag analysis ran after cancellation")
+		}
+	}
+}
+
 func TestAnalyzeTraceSerializesParallelStages(t *testing.T) {
 	counts := make(map[analysis.Stage]int)
 	result, err := analysis.AnalyzeContext(context.Background(), syntheticGlobalGamemode(2000), analysis.Options{

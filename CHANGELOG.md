@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.1 - 2026-07-26
+
+### Performance
+
+- Skip remaining symbol and semantic stages after cancellation.
+
 ## 0.10.0 - 2026-07-26
 
 ### Added

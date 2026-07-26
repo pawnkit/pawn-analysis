@@ -145,14 +145,17 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 	table = symbol.Build(parsed.Syntax(), fileID)
 	table.Diagnostics = removeMacroDeclarationDiagnostics(table.Diagnostics, pre)
 	stage.end(ctx, 0)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if needsExpanded {
 		stage = beginStage(opts.Trace, StageSymbolsExpanded)
 		expandedTable = symbol.BuildMapped(expanded.Syntax(), fileID, mapFile)
 		expandedTable.Diagnostics = removeMacroDeclarationDiagnostics(expandedTable.Diagnostics, pre)
 		stage.end(ctx, 0)
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 	}
 	diagnostics := pre.ToRegistryDiagnostics(registry, fileID)
 	for _, item := range parsed.Diagnostics {
@@ -215,6 +218,9 @@ func CompleteContext(ctx context.Context, prepared *Result, opts Options) (*Resu
 	stage := beginStage(opts.Trace, StageSemanticNames)
 	semantics := sema.CheckNames(prepared.Symbols, resolver)
 	stage.end(ctx, 0)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	var previousTags *sema.TagCache
 	if reusableDeclarations(prepared, opts.Previous) {
 		previousTags = opts.Previous.tagCache
@@ -224,14 +230,23 @@ func CompleteContext(ctx context.Context, prepared *Result, opts Options) (*Resu
 		prepared.Parse.Syntax(), prepared.Symbols, resolver, previousTags, opts.Revision,
 	)
 	stage.end(ctx, reusedTags)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	semantics.Diagnostics = append(semantics.Diagnostics, tagDiagnostics...)
 	stage = beginStage(opts.Trace, StageSemanticStates)
 	stateDiagnostics := sema.CheckStates(prepared.Parse.Syntax(), prepared.File)
 	stage.end(ctx, 0)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	semantics.Diagnostics = append(semantics.Diagnostics, stateDiagnostics...)
 	stage = beginStage(opts.Trace, StageSemanticOrder)
 	orderDiagnostics := sema.CheckConstantOrder(prepared.Parse.Syntax(), prepared.Symbols)
 	stage.end(ctx, 0)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	semantics.Diagnostics = append(semantics.Diagnostics, orderDiagnostics...)
 	var previousFlow *sema.FlowCache
 	if reusableDeclarations(prepared, opts.Previous) {

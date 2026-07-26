@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"sort"
+	"sync"
 
 	"github.com/pawnkit/pawnkit-core/diagnostic"
 	"github.com/pawnkit/pawnkit-core/source"
@@ -136,17 +137,25 @@ type Table struct {
 	Scopes      []Scope
 	References  []Reference
 	Diagnostics []diagnostic.Diagnostic
-	Exports     [32]byte
 
 	declarations map[source.Span]ID
 	references   map[source.Span]ID
+	stableOnce   sync.Once
 	stableIDs    map[ID]StableID
+	exports      [32]byte
 }
 
 // StableSymbolID returns a top-level symbol ID that survives body-only edits.
 func (t *Table) StableSymbolID(id ID) (StableID, bool) {
+	t.stableOnce.Do(t.buildStableIDs)
 	value, ok := t.stableIDs[id]
 	return value, ok
+}
+
+// ExportFingerprint identifies the table's top-level signatures.
+func (t *Table) ExportFingerprint() [32]byte {
+	t.stableOnce.Do(t.buildStableIDs)
+	return t.exports
 }
 
 func (t *Table) buildStableIDs() {
@@ -180,7 +189,7 @@ func (t *Table) buildStableIDs() {
 	for _, item := range exports {
 		hash.Write(item[:])
 	}
-	copy(t.Exports[:], hash.Sum(nil))
+	copy(t.exports[:], hash.Sum(nil))
 }
 
 func writeStableSignature(buffer *bytes.Buffer, item Symbol) {

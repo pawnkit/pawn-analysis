@@ -26,7 +26,6 @@ func BuildMapped(root parser.SyntaxNode, file source.FileID, files func(uint32) 
 	}
 	b.resolveFileReferences(fileScope)
 	b.table.buildSpanIndexes()
-	b.table.buildStableIDs()
 	return b.table
 }
 

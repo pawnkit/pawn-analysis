@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0 - 2026-07-26
+
+### Changed
+
+- Built stable IDs and export fingerprints only when incremental analysis asks
+  for them. Use `Table.ExportFingerprint` instead of the former field.
+
 ## 0.2.0 - 2026-07-26
 
 ### Changed

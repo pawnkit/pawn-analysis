@@ -97,7 +97,7 @@ func TestStableIDsIgnoreFunctionBodiesAndOffsets(t *testing.T) {
 	if !firstStable || !secondStable || firstID != secondID {
 		t.Fatal("function body or offset changed the stable ID")
 	}
-	if first.Exports != second.Exports {
+	if first.ExportFingerprint() != second.ExportFingerprint() {
 		t.Fatal("function body or offset changed the export fingerprint")
 	}
 }
@@ -105,7 +105,7 @@ func TestStableIDsIgnoreFunctionBodiesAndOffsets(t *testing.T) {
 func TestExportFingerprintTracksSignatures(t *testing.T) {
 	first, _ := buildTable(t, "stock Helper(value) { return value; }\n")
 	second, _ := buildTable(t, "stock Float:Helper(Float:value) { return value; }\n")
-	if first.Exports == second.Exports {
+	if first.ExportFingerprint() == second.ExportFingerprint() {
 		t.Fatal("signature change did not update the export fingerprint")
 	}
 }

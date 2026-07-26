@@ -35,4 +35,5 @@ CFG. Changes to resolved global constants invalidate every CFG because they
 can change conditional control flow.
 
 Stable IDs are available through `symbol.Table.StableSymbolID`. They are not
-stored on local symbols.
+stored on local symbols. `symbol.Table.ExportFingerprint` computes the matching
+file-level fingerprint. Both indexes are lazy.

@@ -66,10 +66,14 @@ func CheckControlFlowCached(
 		if !ok {
 			continue
 		}
-		stableID, stable := table.StableSymbolID(callable.ID)
+		var stableID symbol.StableID
+		var stable bool
 		var bodyHash [32]byte
 		var graph *cfg.Graph
-		if previous != nil && stable {
+		if previous != nil && len(previous.entries) != 0 {
+			stableID, stable = table.StableSymbolID(callable.ID)
+		}
+		if stable {
 			if cached, ok := previous.entries[stableID]; ok {
 				bodyHash = sha256.Sum256(body.Bytes())
 				graph = reuseFlow(cached, callable, bodyHash, constantHash, table.File)
@@ -89,12 +93,17 @@ func CheckControlFlowCached(
 				return value.Value, value.Known
 			})
 		}
-		if stable && len(graph.Blocks) >= 5 {
-			if bodyHash == ([32]byte{}) {
-				bodyHash = sha256.Sum256(body.Bytes())
+		if len(graph.Blocks) >= 5 {
+			if !stable {
+				stableID, stable = table.StableSymbolID(callable.ID)
 			}
-			next.entries[stableID] = cachedFlow{
-				body: bodyHash, constants: constantHash, start: callable.Span.Start, graph: graph,
+			if stable {
+				if bodyHash == ([32]byte{}) {
+					bodyHash = sha256.Sum256(body.Bytes())
+				}
+				next.entries[stableID] = cachedFlow{
+					body: bodyHash, constants: constantHash, start: callable.Span.Start, graph: graph,
+				}
 			}
 		}
 		flows = append(flows, FunctionFlow{Symbol: callable.ID, Graph: graph})

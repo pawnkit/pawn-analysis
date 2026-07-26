@@ -95,8 +95,10 @@ type Symbol struct {
 	ParamTags     []string    // parameter tags in declaration order.
 	StateSelector string      // state selector text; empty for ordinary declarations.
 	Span          source.Span // the declaration name's span.
-	StableID      [32]byte    // stable across body-only edits.
 }
+
+// StableID identifies a top-level declaration across source revisions.
+type StableID [32]byte
 
 // ScopeKind classifies a [Scope].
 type ScopeKind uint8
@@ -138,11 +140,19 @@ type Table struct {
 
 	declarations map[source.Span]ID
 	references   map[source.Span]ID
+	stableIDs    map[ID]StableID
+}
+
+// StableSymbolID returns a top-level symbol ID that survives body-only edits.
+func (t *Table) StableSymbolID(id ID) (StableID, bool) {
+	value, ok := t.stableIDs[id]
+	return value, ok
 }
 
 func (t *Table) buildStableIDs() {
 	ordinals := make(map[[32]byte]uint64)
 	exports := make([][32]byte, 0)
+	t.stableIDs = make(map[ID]StableID)
 	var signature bytes.Buffer
 	for i := range t.Symbols {
 		item := &t.Symbols[i]
@@ -160,7 +170,7 @@ func (t *Table) buildStableIDs() {
 		var encoded [8]byte
 		binary.LittleEndian.PutUint64(encoded[:], ordinal)
 		copy(identity[32:], encoded[:])
-		item.StableID = sha256.Sum256(identity[:])
+		t.stableIDs[item.ID] = sha256.Sum256(identity[:])
 		exports = append(exports, signatureHash)
 	}
 	sort.Slice(exports, func(i, j int) bool {

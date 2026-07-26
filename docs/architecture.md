@@ -33,3 +33,6 @@ offsets or function bodies. Snapshot updates use them to reuse non-trivial
 CFGs. Small graphs are cheaper to rebuild. Function edits invalidate their own
 CFG. Changes to resolved global constants invalidate every CFG because they
 can change conditional control flow.
+
+Stable IDs are available through `symbol.Table.StableSymbolID`. They are not
+stored on local symbols.

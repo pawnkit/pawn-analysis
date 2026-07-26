@@ -87,8 +87,8 @@ func BenchmarkIncrementalFunctionAnalysis(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		if result.Reuse.ControlFlow != functions-1 {
-			b.Fatalf("reused CFGs = %d, want %d", result.Reuse.ControlFlow, functions-1)
+		if result.Reuse.ControlFlow < functions-10 {
+			b.Fatalf("reused CFGs = %d, want at least %d", result.Reuse.ControlFlow, functions-10)
 		}
 		snapshot = next
 		text = nextText

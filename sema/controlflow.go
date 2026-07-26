@@ -20,7 +20,7 @@ type FunctionFlow struct {
 
 // FlowCache stores immutable function CFGs between document revisions.
 type FlowCache struct {
-	entries map[[32]byte]cachedFlow
+	entries map[symbol.StableID]cachedFlow
 }
 
 type cachedFlow struct {
@@ -43,13 +43,13 @@ func CheckControlFlowCached(
 	previous *FlowCache,
 ) ([]FunctionFlow, []diagnostic.Diagnostic, *FlowCache, int) {
 	if !root.Valid() || table == nil {
-		return nil, nil, &FlowCache{entries: make(map[[32]byte]cachedFlow)}, 0
+		return nil, nil, &FlowCache{entries: make(map[symbol.StableID]cachedFlow)}, 0
 	}
 	var flows []FunctionFlow
 	var diagnostics []diagnostic.Diagnostic
 	constants := ResolveConstants(root, table)
 	constantHash := constantFingerprint(table, constants)
-	next := &FlowCache{entries: make(map[[32]byte]cachedFlow)}
+	next := &FlowCache{entries: make(map[symbol.StableID]cachedFlow)}
 	reused := 0
 	decls := root.Declarations()
 	for decls.Next() {
@@ -66,10 +66,11 @@ func CheckControlFlowCached(
 		if !ok {
 			continue
 		}
+		stableID, stable := table.StableSymbolID(callable.ID)
 		var bodyHash [32]byte
 		var graph *cfg.Graph
-		if previous != nil {
-			if cached, ok := previous.entries[callable.StableID]; ok {
+		if previous != nil && stable {
+			if cached, ok := previous.entries[stableID]; ok {
 				bodyHash = sha256.Sum256(body.Bytes())
 				graph = reuseFlow(cached, callable, bodyHash, constantHash, table.File)
 				if graph != nil {
@@ -88,11 +89,11 @@ func CheckControlFlowCached(
 				return value.Value, value.Known
 			})
 		}
-		if len(graph.Blocks) >= 5 {
+		if stable && len(graph.Blocks) >= 5 {
 			if bodyHash == ([32]byte{}) {
 				bodyHash = sha256.Sum256(body.Bytes())
 			}
-			next.entries[callable.StableID] = cachedFlow{
+			next.entries[stableID] = cachedFlow{
 				body: bodyHash, constants: constantHash, start: callable.Span.Start, graph: graph,
 			}
 		}
@@ -120,9 +121,6 @@ func reuseFlow(
 	body, constants [32]byte,
 	file source.FileID,
 ) *cfg.Graph {
-	if callable.StableID == ([32]byte{}) {
-		return nil
-	}
 	if cached.body != body || cached.constants != constants {
 		return nil
 	}
@@ -155,16 +153,20 @@ func shiftGraph(graph *cfg.Graph, file source.FileID, delta source.Offset) *cfg.
 
 func constantFingerprint(table *symbol.Table, values map[symbol.ID]Constant) [32]byte {
 	type entry struct {
-		stable [32]byte
+		stable symbol.StableID
 		value  int64
 	}
 	entries := make([]entry, 0)
 	for id, value := range values {
 		item, ok := table.Symbol(id)
-		if !ok || item.StableID == ([32]byte{}) || !value.Known {
+		if !ok || !value.Known {
 			continue
 		}
-		entries = append(entries, entry{stable: item.StableID, value: value.Value})
+		stableID, stable := table.StableSymbolID(item.ID)
+		if !stable {
+			continue
+		}
+		entries = append(entries, entry{stable: stableID, value: value.Value})
 	}
 	sort.Slice(entries, func(i, j int) bool {
 		return string(entries[i].stable[:]) < string(entries[j].stable[:])

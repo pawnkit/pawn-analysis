@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0 - 2026-07-26
+
+### Changed
+
+- Moved stable declaration IDs from every symbol into the top-level symbol
+  index. Use `Table.StableSymbolID` to read them.
+
 ## 0.1.24 - 2026-07-26
 
 ### Changed

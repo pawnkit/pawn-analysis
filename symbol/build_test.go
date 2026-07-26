@@ -92,7 +92,9 @@ func TestStableIDsIgnoreFunctionBodiesAndOffsets(t *testing.T) {
 	if !firstOK || !secondOK {
 		t.Fatal("missing Helper symbol")
 	}
-	if firstHelper.StableID != secondHelper.StableID {
+	firstID, firstStable := first.StableSymbolID(firstHelper.ID)
+	secondID, secondStable := second.StableSymbolID(secondHelper.ID)
+	if !firstStable || !secondStable || firstID != secondID {
 		t.Fatal("function body or offset changed the stable ID")
 	}
 	if first.Exports != second.Exports {

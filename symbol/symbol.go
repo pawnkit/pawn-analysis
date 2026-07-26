@@ -2,11 +2,10 @@
 package symbol
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
 	"sort"
-	"strconv"
-	"strings"
 
 	"github.com/pawnkit/pawnkit-core/diagnostic"
 	"github.com/pawnkit/pawnkit-core/source"
@@ -142,38 +141,68 @@ type Table struct {
 }
 
 func (t *Table) buildStableIDs() {
-	ordinals := make(map[string]uint64)
-	exports := make([]string, 0)
+	ordinals := make(map[[32]byte]uint64)
+	exports := make([][32]byte, 0)
+	var signature bytes.Buffer
 	for i := range t.Symbols {
 		item := &t.Symbols[i]
 		scope, ok := t.Scope(item.Scope)
 		if !ok || scope.Kind != ScopeFile {
 			continue
 		}
-		signature := stableSignature(*item)
-		ordinal := ordinals[signature]
-		ordinals[signature]++
-		hash := sha256.New()
-		hash.Write([]byte(signature))
+		signature.Reset()
+		writeStableSignature(&signature, *item)
+		signatureHash := sha256.Sum256(signature.Bytes())
+		ordinal := ordinals[signatureHash]
+		ordinals[signatureHash]++
+		var identity [40]byte
+		copy(identity[:32], signatureHash[:])
 		var encoded [8]byte
 		binary.LittleEndian.PutUint64(encoded[:], ordinal)
-		hash.Write(encoded[:])
-		copy(item.StableID[:], hash.Sum(nil))
-		exports = append(exports, signature)
+		copy(identity[32:], encoded[:])
+		item.StableID = sha256.Sum256(identity[:])
+		exports = append(exports, signatureHash)
 	}
-	sort.Strings(exports)
-	t.Exports = sha256.Sum256([]byte(strings.Join(exports, "\x00")))
+	sort.Slice(exports, func(i, j int) bool {
+		return bytes.Compare(exports[i][:], exports[j][:]) < 0
+	})
+	hash := sha256.New()
+	for _, item := range exports {
+		hash.Write(item[:])
+	}
+	copy(t.Exports[:], hash.Sum(nil))
 }
 
-func stableSignature(item Symbol) string {
-	parts := []string{
-		strconv.Itoa(int(item.Kind)), item.Name, item.Tag,
-		strconv.FormatBool(item.IsArray), strconv.FormatBool(item.IsConst),
-		strconv.FormatBool(item.IsStatic), strconv.Itoa(item.MinArgs),
-		strconv.Itoa(item.MaxArgs), strings.Join(item.ParamTags, ","),
-		item.StateSelector,
+func writeStableSignature(buffer *bytes.Buffer, item Symbol) {
+	buffer.WriteByte(byte(item.Kind))
+	writeStableString(buffer, item.Name)
+	writeStableString(buffer, item.Tag)
+	var flags byte
+	if item.IsArray {
+		flags |= 1
 	}
-	return strings.Join(parts, "\x1f")
+	if item.IsConst {
+		flags |= 2
+	}
+	if item.IsStatic {
+		flags |= 4
+	}
+	buffer.WriteByte(flags)
+	var encoded [8]byte
+	binary.LittleEndian.PutUint32(encoded[:4], uint32(item.MinArgs)) //nolint:gosec // Signed values retain their bit pattern.
+	binary.LittleEndian.PutUint32(encoded[4:], uint32(item.MaxArgs)) //nolint:gosec // -1 marks variadic functions.
+	buffer.Write(encoded[:])
+	for _, tag := range item.ParamTags {
+		writeStableString(buffer, tag)
+	}
+	writeStableString(buffer, item.StateSelector)
+}
+
+func writeStableString(buffer *bytes.Buffer, value string) {
+	var size [8]byte
+	binary.LittleEndian.PutUint64(size[:], uint64(len(value)))
+	buffer.Write(size[:])
+	buffer.WriteString(value)
 }
 
 // Symbol looks up a symbol by ID.

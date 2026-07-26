@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.22 - 2026-07-26
+
+### Changed
+
+- Reduced allocations while building stable symbol IDs.
+
 ## 0.1.21 - 2026-07-26
 
 ### Added

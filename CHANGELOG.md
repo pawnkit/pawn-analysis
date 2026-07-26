@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.0 - 2026-07-26
+
+### Added
+
+- Added opt-in timings for preprocessing, parsing, symbol building, semantics,
+  and control flow.
+
 ## 0.5.2 - 2026-07-26
 
 ### Changed

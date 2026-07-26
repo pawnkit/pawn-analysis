@@ -15,3 +15,16 @@ small package-level regressions stay here.
 Bug fixes need a small regression case. Preprocessor changes should cover malformed input, nesting limits, and source provenance. Cache changes should test cancellation, revisions, and concurrent reads.
 
 Golden files never update themselves in CI. External fixtures must record their origin, licence, and pinned version or commit.
+
+## Stage timings
+
+Set `Options.Trace` when profiling a host:
+
+```go
+options.Trace = func(event analysis.TraceEvent) {
+	log.Printf("%s: %s", event.Stage, event.Duration)
+}
+```
+
+Tracing is synchronous and disabled by default. Keep callbacks short and do
+not use them for application logic.

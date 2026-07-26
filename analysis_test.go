@@ -25,6 +25,37 @@ func TestAnalyzeContextCancelled(t *testing.T) {
 	}
 }
 
+func TestAnalyzeTraceReportsStages(t *testing.T) {
+	var stages []analysis.Stage
+	result, err := analysis.AnalyzeContext(context.Background(), []byte("main() { return 1; }"), analysis.Options{
+		RetainExpanded: true,
+		Trace: func(event analysis.TraceEvent) {
+			stages = append(stages, event.Stage)
+			if event.Duration < 0 {
+				t.Errorf("%s duration = %s", event.Stage, event.Duration)
+			}
+		},
+	})
+	if err != nil || result == nil {
+		t.Fatalf("AnalyzeContext() = (%v, %v)", result, err)
+	}
+	want := []analysis.Stage{
+		analysis.StagePreprocess,
+		analysis.StageParseOriginal,
+		analysis.StageSymbolsOriginal,
+		analysis.StageParseExpanded,
+		analysis.StageSymbolsExpanded,
+		analysis.StageSemanticNames,
+		analysis.StageSemanticTags,
+		analysis.StageSemanticStates,
+		analysis.StageSemanticOrder,
+		analysis.StageSemanticCFG,
+	}
+	if !reflect.DeepEqual(stages, want) {
+		t.Fatalf("stages = %v, want %v", stages, want)
+	}
+}
+
 func TestCompleteContextMatchesCleanAnalysis(t *testing.T) {
 	text := []byte("stock Helper(value) { return value; }\nmain() { Helper(1); }\n")
 	opts := analysis.Options{URI: source.FileURI("test.pwn"), RetainExpanded: true}

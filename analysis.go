@@ -25,6 +25,7 @@ type Options struct {
 	SkipSemantics   bool
 	TokenCache      *preprocess.TokenCache
 	Previous        *Result
+	Trace           func(TraceEvent)
 }
 
 type ReuseStats struct {
@@ -68,6 +69,7 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 	registry := source.NewRegistry()
 	fileID := registry.Intern(uri)
 
+	stage := beginStage(opts.Trace, StagePreprocess)
 	pre := preprocess.Run(text, preprocess.Options{
 		URI:             uri.String(),
 		Resolver:        opts.Includes,
@@ -75,6 +77,7 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		MaxOutputTokens: opts.MaxOutputTokens,
 		TokenCache:      opts.TokenCache,
 	})
+	stage.end(ctx, 0)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -92,24 +95,32 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		}
 		return fileID
 	}
+	stage = beginStage(opts.Trace, StageParseOriginal)
 	parsed := parser.ParseTokensCompact(text, pre.OriginalTokens, parser.ParseOptions{})
+	stage.end(ctx, 0)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	stage = beginStage(opts.Trace, StageSymbolsOriginal)
 	table := symbol.Build(parsed.Syntax(), fileID)
 	table.Diagnostics = removeMacroDeclarationDiagnostics(table.Diagnostics, pre)
+	stage.end(ctx, 0)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	var expanded *parser.CompactFile
 	var expandedTable *symbol.Table
 	if opts.RetainExpanded || opts.Includes != nil {
+		stage = beginStage(opts.Trace, StageParseExpanded)
 		expanded = parser.ParseTokensCompact(pre.ExpandedSource, pre.ExpandedTokens, parser.ParseOptions{})
+		stage.end(ctx, 0)
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+		stage = beginStage(opts.Trace, StageSymbolsExpanded)
 		expandedTable = symbol.BuildMapped(expanded.Syntax(), fileID, mapFile)
 		expandedTable.Diagnostics = removeMacroDeclarationDiagnostics(expandedTable.Diagnostics, pre)
+		stage.end(ctx, 0)
 	}
 	diagnostics := pre.ToRegistryDiagnostics(registry, fileID)
 	for _, item := range parsed.Diagnostics {
@@ -138,24 +149,36 @@ func CompleteContext(ctx context.Context, prepared *Result, opts Options) (*Resu
 		return nil, errors.New("analysis result is incomplete")
 	}
 	resolver := newNameResolver(prepared.Preprocess.Macros, prepared.ExpandedSymbols, opts.Names)
+	stage := beginStage(opts.Trace, StageSemanticNames)
 	semantics := sema.CheckNames(prepared.Symbols, resolver)
+	stage.end(ctx, 0)
 	var previousTags *sema.TagCache
 	if opts.Previous != nil {
 		previousTags = opts.Previous.tagCache
 	}
+	stage = beginStage(opts.Trace, StageSemanticTags)
 	tagDiagnostics, tagCache, reusedTags := sema.CheckTagsCached(
 		prepared.Parse.Syntax(), prepared.Symbols, resolver, previousTags, opts.Revision,
 	)
+	stage.end(ctx, reusedTags)
 	semantics.Diagnostics = append(semantics.Diagnostics, tagDiagnostics...)
-	semantics.Diagnostics = append(semantics.Diagnostics, sema.CheckStates(prepared.Parse.Syntax(), prepared.File)...)
-	semantics.Diagnostics = append(semantics.Diagnostics, sema.CheckConstantOrder(prepared.Parse.Syntax(), prepared.Symbols)...)
+	stage = beginStage(opts.Trace, StageSemanticStates)
+	stateDiagnostics := sema.CheckStates(prepared.Parse.Syntax(), prepared.File)
+	stage.end(ctx, 0)
+	semantics.Diagnostics = append(semantics.Diagnostics, stateDiagnostics...)
+	stage = beginStage(opts.Trace, StageSemanticOrder)
+	orderDiagnostics := sema.CheckConstantOrder(prepared.Parse.Syntax(), prepared.Symbols)
+	stage.end(ctx, 0)
+	semantics.Diagnostics = append(semantics.Diagnostics, orderDiagnostics...)
 	var previousFlow *sema.FlowCache
 	if opts.Previous != nil {
 		previousFlow = opts.Previous.flowCache
 	}
+	stage = beginStage(opts.Trace, StageSemanticCFG)
 	flows, flowDiagnostics, flowCache, reused := sema.CheckControlFlowCached(
 		prepared.Parse.Syntax(), prepared.Symbols, previousFlow,
 	)
+	stage.end(ctx, reused)
 	semantics.Diagnostics = append(semantics.Diagnostics, flowDiagnostics...)
 	if err := ctx.Err(); err != nil {
 		return nil, err

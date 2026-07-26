@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.3 - 2026-07-26
+
+### Fixed
+
+- Capped preprocessor token preallocation at the configured output limit.
+
 ## 0.4.2 - 2026-07-26
 
 ### Changed

@@ -321,7 +321,8 @@ func Run(src []byte, opts Options) *Result {
 	}
 
 	originalTokens := lexer.Tokenize(src)
-	e.out = make([]token.Token, 0, len(originalTokens))
+	outputCapacity := min(len(originalTokens), opts.MaxOutputTokens+1)
+	e.out = make([]token.Token, 0, outputCapacity)
 	e.expandedBuf = make([]byte, 0, len(src))
 	root := &frame{fileIndex: 0, source: src, toks: originalTokens, uri: opts.URI, lineStart: true}
 	e.run(root)

@@ -14,9 +14,26 @@ import (
 	analysis "github.com/pawnkit/pawn-analysis"
 	"github.com/pawnkit/pawn-analysis/preprocess"
 	"github.com/pawnkit/pawn-analysis/sema"
+	"github.com/pawnkit/pawn-analysis/symbol"
 	"github.com/pawnkit/pawnkit-core/diagnostic"
 	"github.com/pawnkit/pawnkit-core/source"
 )
+
+var (
+	_ func([]byte, analysis.Options) *analysis.Result                           = analysis.Analyze
+	_ func(context.Context, []byte, analysis.Options) (*analysis.Result, error) = analysis.AnalyzeContext
+	_ func([]byte, preprocess.Options) *preprocess.Result                       = preprocess.Run
+	_ symbol.ID                                                                 = 0
+	_ diagnostic.Diagnostic
+	_ source.Span
+)
+
+var _ = func(result *analysis.Result) {
+	_ = result.Diagnostics
+	_ = result.Symbols
+	_ = result.Semantics
+	_ = result.Preprocess
+}
 
 func TestCompilerCompatibilityCases(t *testing.T) {
 	tests := []struct {

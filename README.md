@@ -1,5 +1,7 @@
 # pawn-analysis
 
+[![Maturity: preview](https://img.shields.io/badge/maturity-preview-blue)](.pawnkit/support.json)
+
 Shared Pawn preprocessing and semantic analysis for PawnKit tools.
 
 The library provides original and expanded syntax, source-mapped symbols,

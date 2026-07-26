@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.18 - 2026-07-25
+
+### Added
+
+- Documented preview package boundaries and added a compatibility compile test.
+- Published the repository support record.
+
 ## 0.1.17 - 2026-07-24
 
 ### Fixed

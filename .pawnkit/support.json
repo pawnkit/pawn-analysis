@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "repository": "pawnkit/pawn-analysis",
+  "maturity": "preview",
+  "platforms": ["linux-amd64"],
+  "profiles": ["samp-037", "openmp"],
+  "compilers": [],
+  "contracts": [
+    { "name": "pawn-diagnostic", "major": 2 }
+  ],
+  "limitations": [
+    "Public semantic API stability remains under RFC review.",
+    "Windows and macOS builds are not tested in this repository."
+  ]
+}

@@ -105,9 +105,10 @@ func BenchmarkIncrementalFunctionAnalysis(b *testing.B) {
 	const functions = 2000
 	uri := source.FileURI("gamemode.pwn")
 	text := syntheticGlobalGamemode(functions)
-	edit := strings.Index(string(text), "value + MAX_PLAYERS") + len("value ")
+	edit := strings.Index(string(text), "result > 10") + len("result > 1")
 	snapshot := New(Document{URI: uri, Text: text, Version: 1})
-	if _, err := snapshot.Analyze(context.Background(), uri, analysis.Options{}); err != nil {
+	opts := analysis.Options{Revision: "benchmark", ReuseCompatibleExpansion: true}
+	if _, err := snapshot.Analyze(context.Background(), uri, opts); err != nil {
 		b.Fatal(err)
 	}
 
@@ -116,18 +117,14 @@ func BenchmarkIncrementalFunctionAnalysis(b *testing.B) {
 	for version := int64(2); b.Loop(); version++ {
 		b.StopTimer()
 		nextText := append([]byte(nil), text...)
-		if version%2 == 0 {
-			nextText[edit] = '-'
-		} else {
-			nextText[edit] = '+'
-		}
+		nextText[edit] = byte('0' + version%2)
 		next, ok := snapshot.Update(Document{URI: uri, Text: nextText, Version: version})
 		if !ok {
 			b.Fatal("update rejected")
 		}
 		b.StartTimer()
 
-		result, err := next.Analyze(context.Background(), uri, analysis.Options{})
+		result, err := next.Analyze(context.Background(), uri, opts)
 		if err != nil {
 			b.Fatal(err)
 		}

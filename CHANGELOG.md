@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.16.0 - 2026-07-28
+
+### Added
+
+- Editor analysis can reuse a compatible expanded dependency graph for safe,
+  same-width function-body edits.
+
+### Performance
+
+- SAFW local analysis fell from about 8.5 seconds to 0.25-0.40 seconds on the
+  reference machine.
+
 ## 0.15.0 - 2026-07-26
 
 ### Performance

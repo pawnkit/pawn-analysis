@@ -29,13 +29,17 @@ type Options struct {
 	SkipSemantics   bool
 	TokenCache      *preprocess.TokenCache
 	Previous        *Result
-	Trace           func(TraceEvent)
+	// ReuseCompatibleExpansion allows editor diagnostics to reuse an unchanged
+	// dependency graph. Expanded source may describe the previous local body.
+	ReuseCompatibleExpansion bool
+	Trace                    func(TraceEvent)
 }
 
 type ReuseStats struct {
-	ControlFlow  int
-	Declarations int
-	Tags         int
+	ControlFlow         int
+	Declarations        int
+	Tags                int
+	CompatibleExpansion bool
 }
 
 // Result is one immutable file analysis.
@@ -81,10 +85,19 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 	var pre *preprocess.Result
 	var err error
 	reusedPreprocess := false
+	var localChanges []preprocess.ByteRange
+	localCandidate := false
 	if opts.Previous != nil && opts.Revision != "" && opts.Previous.revision == opts.Revision {
 		pre, reusedPreprocess, err = preprocess.ReuseTriviaContext(
 			ctx, text, uri.String(), opts.TokenCache, opts.Previous.Preprocess,
 		)
+		if err == nil && !reusedPreprocess && opts.ReuseCompatibleExpansion &&
+			worthwhileLocalReuse(opts.Previous.Preprocess) {
+			pre, localChanges, localCandidate, err = preprocess.ReuseCompatibleContext(
+				ctx, text, uri.String(), opts.TokenCache, opts.Previous.Preprocess,
+			)
+			reusedPreprocess = localCandidate
+		}
 	}
 	if err == nil && !reusedPreprocess {
 		pre, err = preprocess.RunContext(ctx, text, preprocess.Options{
@@ -212,6 +225,11 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 	addDiagnosticDocs(diagnostics)
 	stage = beginStage(opts.Trace, StageDeclarations)
 	declarations := parser.BuildDeclarationIndex(parsed)
+	if localCandidate && !reusableLocalEdit(opts.Previous, parsed, declarations, table, localChanges) {
+		fallback := opts
+		fallback.Previous = nil
+		return AnalyzeContext(ctx, text, fallback)
+	}
 	reusedDeclarationCount := 0
 	if opts.Previous != nil {
 		reusedDeclarationCount = reusedDeclarations(opts.Previous.Declarations, declarations)
@@ -227,10 +245,18 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		revision: opts.Revision,
 	}
 	prepared.Reuse.Declarations = reusedDeclarationCount
+	prepared.Reuse.CompatibleExpansion = localCandidate
 	if opts.SkipSemantics {
 		return retainExpanded(prepared, opts.RetainExpanded), nil
 	}
 	return CompleteContext(ctx, prepared, opts)
+}
+
+func worthwhileLocalReuse(previous *preprocess.Result) bool {
+	if previous == nil {
+		return false
+	}
+	return len(previous.ExpandedTokens) > len(previous.OriginalTokens)*2
 }
 
 func reusableExpanded(current *preprocess.Result, previous *Result) bool {
@@ -249,6 +275,10 @@ func reusableExpanded(current *preprocess.Result, previous *Result) bool {
 			return false
 		}
 	}
+	if sameByteBacking(current.ExpandedSource, before.ExpandedSource) &&
+		sameTokenBacking(current.ExpandedTokens, before.ExpandedTokens) {
+		return true
+	}
 	for i := range current.ExpandedSource {
 		if current.ExpandedSource[i] != before.ExpandedSource[i] {
 			return false
@@ -260,6 +290,16 @@ func reusableExpanded(current *preprocess.Result, previous *Result) bool {
 		}
 	}
 	return true
+}
+
+func sameByteBacking(left, right []byte) bool {
+	return len(left) == 0 && len(right) == 0 ||
+		len(left) != 0 && len(right) != 0 && &left[0] == &right[0]
+}
+
+func sameTokenBacking(left, right []token.Token) bool {
+	return len(left) == 0 && len(right) == 0 ||
+		len(left) != 0 && len(right) != 0 && &left[0] == &right[0]
 }
 
 func sameExpandedToken(left, right token.Token) bool {
@@ -294,6 +334,102 @@ func reusedDeclarations(previous, current parser.DeclarationIndex) int {
 		}
 	}
 	return reused
+}
+
+func reusableLocalEdit(
+	previous *Result,
+	currentParse *parser.CompactFile,
+	current parser.DeclarationIndex,
+	currentSymbols *symbol.Table,
+	changes []preprocess.ByteRange,
+) bool {
+	if previous == nil || previous.Symbols == nil || currentSymbols == nil ||
+		!previous.Declarations.Reliable() || !current.Reliable() ||
+		previous.Declarations.Len() != current.Len() ||
+		previous.Symbols.ExportFingerprint() != currentSymbols.ExportFingerprint() {
+		return false
+	}
+	if changesTouchMacroInvocations(currentParse.Syntax(), changes, previous.Preprocess.Macros) {
+		return false
+	}
+	for _, change := range changes {
+		found := false
+		for position := range current.Len() {
+			now, _ := current.At(position)
+			before, _ := previous.Declarations.At(position)
+			if now.Identity != before.Identity ||
+				now.Kind != parser.KindFunctionDefinition ||
+				before.Kind != parser.KindFunctionDefinition {
+				continue
+			}
+			if change.Start >= now.Range.Start && change.End <= now.Range.End &&
+				change.Start >= before.Range.Start && change.End <= before.Range.End {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return len(changes) != 0
+}
+
+func changesTouchMacroInvocations(
+	root parser.SyntaxNode,
+	changes []preprocess.ByteRange,
+	macros map[string]preprocess.Macro,
+) bool {
+	declarations := root.Declarations()
+	for declarations.Next() {
+		declaration := declarations.Declaration()
+		rng := declaration.Range()
+		for _, change := range changes {
+			if change.Start >= rng.Start && change.End <= rng.End &&
+				changesTouchMacroInvocation(declaration, []preprocess.ByteRange{change}, macros) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func changesTouchMacroInvocation(
+	node parser.SyntaxNode,
+	changes []preprocess.ByteRange,
+	macros map[string]preprocess.Macro,
+) bool {
+	if !node.Valid() {
+		return false
+	}
+	rng := node.Range()
+	overlaps := false
+	for _, change := range changes {
+		if change.Start < rng.End && change.End > rng.Start {
+			overlaps = true
+			break
+		}
+	}
+	if !overlaps {
+		return false
+	}
+	if node.Kind() == parser.KindMacroInvocation {
+		return true
+	}
+	if node.Kind() == parser.KindCallExpression {
+		if name, ok := node.Field("function"); ok {
+			if _, macro := macros[name.Token().Text()]; macro {
+				return true
+			}
+		}
+	}
+	children := node.Children()
+	for children.Next() {
+		if changesTouchMacroInvocation(children.Node(), changes, macros) {
+			return true
+		}
+	}
+	return false
 }
 
 // CompleteContext runs semantics on an existing parse result.

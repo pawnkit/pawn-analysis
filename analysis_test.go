@@ -217,6 +217,97 @@ func TestAnalyzeReusesExpandedViewForEquivalentTriviaEdit(t *testing.T) {
 	}
 }
 
+func TestAnalyzeReusesExpandedViewForLocalTokenEdit(t *testing.T) {
+	includes := preprocess.MapResolver{
+		"shared": bytes.Repeat([]byte("stock Included() {}\n"), 20),
+	}
+	before := analysis.Analyze(
+		[]byte("#include <shared>\nstock Work() { return 1; }\nstock Keep() { return 2; }\n"),
+		analysis.Options{Includes: includes, RetainExpanded: true, Revision: "project:1"},
+	)
+	after, err := analysis.AnalyzeContext(
+		context.Background(),
+		[]byte("#include <shared>\nstock Work() { return 3; }\nstock Keep() { return 2; }\n"),
+		analysis.Options{
+			Includes: includes, RetainExpanded: true, Previous: before, Revision: "project:1",
+			ReuseCompatibleExpansion: true,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.ExpandedParse != before.ExpandedParse || after.ExpandedSymbols != before.ExpandedSymbols {
+		t.Fatal("expanded view was rebuilt for a local token edit")
+	}
+	if after.Reuse.Declarations == 0 {
+		t.Fatal("unchanged declaration was not reused")
+	}
+	clean := analysis.Analyze(
+		[]byte("#include <shared>\nstock Work() { return 3; }\nstock Keep() { return 2; }\n"),
+		analysis.Options{Includes: includes, RetainExpanded: true, Revision: "project:1"},
+	)
+	if !reflect.DeepEqual(after.Diagnostics, clean.Diagnostics) {
+		t.Fatalf("incremental diagnostics differ:\ngot  %#v\nwant %#v", after.Diagnostics, clean.Diagnostics)
+	}
+}
+
+func TestAnalyzeRebuildsExpandedViewForNonLocalTokenEdit(t *testing.T) {
+	tests := []struct {
+		name   string
+		before string
+		after  string
+	}{
+		{
+			name:   "signature",
+			before: "stock Work() { return 1; }\n",
+			after:  "stock Task() { return 1; }\n",
+		},
+		{
+			name:   "macro invocation",
+			before: "#define PICK(%0) (%0)\nstock Work() { return PICK(1); }\n",
+			after:  "#define PICK(%0) (%0)\nstock Work() { return PICK(2); }\n",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			before := analysis.Analyze(
+				[]byte(test.before),
+				analysis.Options{RetainExpanded: true, Revision: "project:1"},
+			)
+			after := analysis.Analyze(
+				[]byte(test.after),
+				analysis.Options{
+					RetainExpanded: true, Previous: before, Revision: "project:1",
+					ReuseCompatibleExpansion: true,
+				},
+			)
+			if after.ExpandedParse == before.ExpandedParse || after.ExpandedSymbols == before.ExpandedSymbols {
+				t.Fatal("expanded view was reused")
+			}
+		})
+	}
+}
+
+func TestAnalyzeKeepsExpandedOutputExactByDefault(t *testing.T) {
+	includes := preprocess.MapResolver{"shared": bytes.Repeat([]byte("stock Included() {}\n"), 20)}
+	before := analysis.Analyze(
+		[]byte("#include <shared>\nstock Work() { return 1; }\n"),
+		analysis.Options{Includes: includes, RetainExpanded: true, Revision: "project:1"},
+	)
+	after := analysis.Analyze(
+		[]byte("#include <shared>\nstock Work() { return 2; }\n"),
+		analysis.Options{
+			Includes: includes, RetainExpanded: true, Previous: before, Revision: "project:1",
+		},
+	)
+	if after.ExpandedParse == before.ExpandedParse || after.ExpandedSymbols == before.ExpandedSymbols {
+		t.Fatal("exact analysis reused the previous expansion")
+	}
+	if after.Reuse.CompatibleExpansion {
+		t.Fatal("exact analysis reported a compatible expansion")
+	}
+}
+
 func TestAnalyzeRebuildsExpandedViewWhenTriviaMovesTokens(t *testing.T) {
 	before := analysis.Analyze(
 		[]byte("stock  Work() { return 1; }\n"),

@@ -68,17 +68,19 @@ func (e *engine) handleInclude(f *frame, hash token.Token, optional bool) {
 			inc.Resolved = true
 			inc.ResolvedURI = uri
 			childIndex := uint32(len(e.files)) //nolint:gosec // File count is bounded by include depth.
-			e.files = append(e.files, FileInfo{URI: uri, Depth: f.depth + 1, Content: content})
-			inc.ChildFile = childIndex
-			inc.HasChildFile = true
-
-			e.includeStack[uri] = true
 			tokens, err := e.opts.TokenCache.tokenizeContext(e.ctx, e.cancellable, uri, content)
 			if err != nil {
 				e.cancelled = err
 				e.stopped = true
 				return
 			}
+			e.files = append(e.files, FileInfo{
+				URI: uri, Depth: f.depth + 1, Content: content, Tokens: tokens,
+			})
+			inc.ChildFile = childIndex
+			inc.HasChildFile = true
+
+			e.includeStack[uri] = true
 			child := &frame{
 				fileIndex: childIndex, source: content, toks: tokens,
 				uri: uri, depth: f.depth + 1, lineStart: true,

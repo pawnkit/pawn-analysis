@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.20.0 - 2026-07-28
+
+### Added
+
+- Expose each preprocessed file's token stream for downstream reuse.
+
 ## 0.19.0 - 2026-07-28
 
 ### Performance

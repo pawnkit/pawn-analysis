@@ -98,6 +98,7 @@ type FileInfo struct {
 	URI     string
 	Depth   int
 	Content []byte
+	Tokens  []token.Token
 }
 
 // Include records one #include/#tryinclude directive and its resolution
@@ -354,6 +355,7 @@ func run(src []byte, opts Options, ctx context.Context, cancellable bool) (*Resu
 	if err != nil {
 		return nil, err
 	}
+	e.files[0].Tokens = originalTokens
 	outputCapacity := min(len(originalTokens), opts.MaxOutputTokens+1)
 	e.out = make([]token.Token, 0, outputCapacity)
 	e.expandedBuf = make([]byte, 0, len(src))

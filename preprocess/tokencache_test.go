@@ -31,3 +31,24 @@ func TestNilTokenCacheTokenizesDirectly(t *testing.T) {
 		t.Fatal("expected a nil cache to still tokenize content")
 	}
 }
+
+func TestResultRetainsTokensForEachFile(t *testing.T) {
+	cache := NewTokenCache()
+	include := []byte("stock Helper() {}\n")
+	result := Run([]byte("#include \"helper.inc\"\n"), Options{
+		Resolver:   MapResolver{"helper.inc": include},
+		TokenCache: cache,
+	})
+	if len(result.Files) != 2 {
+		t.Fatalf("files = %d, want 2", len(result.Files))
+	}
+	for _, file := range result.Files {
+		if len(file.Tokens) == 0 {
+			t.Fatalf("%s has no tokens", file.URI)
+		}
+	}
+	cached := cache.tokenize("helper.inc", include)
+	if &result.Files[1].Tokens[0] != &cached[0] {
+		t.Fatal("include tokens were copied instead of shared")
+	}
+}

@@ -29,3 +29,19 @@ func toPtoks(source []byte, toks []token.Token, file ...uint32) []ptok {
 	}
 	return out
 }
+
+func retainTokenOrigins(toks []ptok) []ptok {
+	for i := range toks {
+		retainTokenOrigin(&toks[i])
+	}
+	return toks
+}
+
+func retainTokenOrigin(tok *ptok) {
+	if tok == nil || tok.Origin != nil {
+		return
+	}
+	tok.Origin = &token.Origin{
+		Span: token.Span{File: tok.file, Start: tok.Start, End: tok.End},
+	}
+}

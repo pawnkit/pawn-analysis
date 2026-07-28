@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.19.0 - 2026-07-28
+
+### Performance
+
+- Emit nested macro expansions directly into the final token stream.
+- Reuse macro body origins and grow the bounded output buffer in larger steps.
+- Reduced the SAFW cold workspace diagnostic response from about 7.2 seconds
+  to 3.9 seconds on the reference machine.
+
 ## 0.18.0 - 2026-07-28
 
 ### Performance

@@ -308,7 +308,6 @@ type engine struct {
 	includeStack map[string]bool
 
 	depthLimitWarned bool
-	sizeLimitWarned  bool
 }
 
 // Run preprocesses src and returns the resulting three-view [Result]. Run
@@ -340,7 +339,9 @@ func run(src []byte, opts Options, ctx context.Context, cancellable bool) (*Resu
 		files:        []FileInfo{{URI: opts.URI, Content: src}},
 	}
 	for name, value := range opts.Predefined {
-		e.macros.define(Macro{Name: name, Kind: MacroObjectLike, Body: tokenizeBody(value)})
+		e.macros.define(Macro{
+			Name: name, Kind: MacroObjectLike, Body: retainTokenOrigins(tokenizeBody(value)),
+		})
 	}
 
 	var originalTokens []token.Token

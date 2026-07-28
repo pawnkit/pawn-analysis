@@ -59,7 +59,22 @@ func (e *engine) appendOut(t ptok) {
 	out.End = token.Position{Offset: start + len(t.text)}
 	out.LeadingTrivia = nil
 	out.TrailingTrivia = nil
+	e.reserveOutputToken()
 	e.out = append(e.out, out)
+}
+
+func (e *engine) reserveOutputToken() {
+	if len(e.out) < cap(e.out) {
+		return
+	}
+	limit := e.opts.MaxOutputTokens + 1
+	capacity := max(64, cap(e.out)*2)
+	if capacity > limit {
+		capacity = limit
+	}
+	next := make([]token.Token, len(e.out), capacity)
+	copy(next, e.out)
+	e.out = next
 }
 
 func (e *engine) appendAllOut(toks []ptok) {
@@ -97,8 +112,7 @@ func (e *engine) expandObjectAt(f *frame, tok token.Token, m Macro) {
 	for i, bt := range m.Body {
 		body[i] = wrapOrigin(bt, inv, m.Name)
 	}
-	result := e.expandRun(f, body, hideSet{}.with(m.Name), 1)
-	e.appendAllOut(result)
+	e.expandRun(f, body, hideSet{}.with(m.Name), 1)
 }
 
 func (e *engine) expandFunctionAt(f *frame, tok token.Token, m Macro) {
@@ -131,8 +145,7 @@ func (e *engine) expandFunctionAt(f *frame, tok token.Token, m Macro) {
 	}
 	inv := invocationSpan(f.fileIndex, tok, closeParen)
 	body := substituteParams(m, args, inv)
-	result := e.expandRun(f, body, hideSet{}.with(m.Name), 1)
-	e.appendAllOut(result)
+	e.expandRun(f, body, hideSet{}.with(m.Name), 1)
 }
 
 // collectArgs scans comma-separated argument token runs starting right
@@ -173,7 +186,9 @@ func (e *engine) collectArgs(f *frame) (args [][]ptok, closeParen token.Token, o
 				continue
 			}
 		}
-		current = append(current, toPtok(f.source, t, f.fileIndex))
+		item := toPtok(f.source, t, f.fileIndex)
+		retainTokenOrigin(&item)
+		current = append(current, item)
 		f.advance()
 	}
 }
@@ -209,7 +224,7 @@ func substituteParams(m Macro, args [][]ptok, inv token.Span) []ptok {
 	return out
 }
 
-func (e *engine) expandRun(f *frame, toks []ptok, hide hideSet, depth int) []ptok {
+func (e *engine) expandRun(f *frame, toks []ptok, hide hideSet, depth int) {
 	if depth > e.opts.MaxExpansionDepth {
 		e.truncated = true
 		if !e.depthLimitWarned {
@@ -223,24 +238,12 @@ func (e *engine) expandRun(f *frame, toks []ptok, hide hideSet, depth int) []pto
 				Message: "macro expansion depth limit exceeded", Range: r,
 			})
 		}
-		return toks
+		e.appendAllOut(toks)
+		return
 	}
-	var out []ptok
 	i := 0
 	for i < len(toks) {
-		if e.pollCancellation() {
-			break
-		}
-		// Stop recursive expansion before it builds an oversized slice.
-		if len(out) > e.opts.MaxOutputTokens {
-			e.truncated = true
-			if !e.sizeLimitWarned {
-				e.sizeLimitWarned = true
-				e.diags = append(e.diags, Diagnostic{
-					File: f.fileIndex, Code: CodeOutputSizeLimit, Severity: diagnostic.SeverityError,
-					Message: "macro expansion output size limit exceeded", Range: spanOf(toks[0].Token, toks[len(toks)-1].Token),
-				})
-			}
+		if e.truncated || e.pollCancellation() {
 			break
 		}
 		t := toks[i]
@@ -253,7 +256,7 @@ func (e *engine) expandRun(f *frame, toks []ptok, hide hideSet, depth int) []pto
 					for j, bt := range m.Body {
 						body[j] = wrapOrigin(bt, inv, m.Name)
 					}
-					out = append(out, e.expandRun(f, body, hide.with(m.Name), depth+1)...)
+					e.expandRun(f, body, hide.with(m.Name), depth+1)
 					i++
 					continue
 				case MacroFunctionLike:
@@ -262,7 +265,7 @@ func (e *engine) expandRun(f *frame, toks []ptok, hide hideSet, depth int) []pto
 						if ok {
 							inv := nestedInvocationSpan(t, toks[endIdx-1])
 							sub := substituteParams(m, args, inv)
-							out = append(out, e.expandRun(f, sub, hide.with(m.Name), depth+1)...)
+							e.expandRun(f, sub, hide.with(m.Name), depth+1)
 							i = endIdx
 							continue
 						}
@@ -270,10 +273,9 @@ func (e *engine) expandRun(f *frame, toks []ptok, hide hideSet, depth int) []pto
 				}
 			}
 		}
-		out = append(out, t)
+		e.appendOut(t)
 		i++
 	}
-	return out
 }
 
 // collectArgsSlice mirrors engine.collectArgs but operates over a detached

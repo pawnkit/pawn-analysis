@@ -152,7 +152,7 @@ func (e *engine) handleDefine(f *frame, hash token.Token) {
 	}
 
 	if !endsLine(f.toks[f.pos-1]) {
-		m.Body = toPtoks(f.source, e.collectRestOfLine(f), f.fileIndex)
+		m.Body = retainTokenOrigins(toPtoks(f.source, e.collectRestOfLine(f), f.fileIndex))
 	}
 
 	if !f.currentActive() {

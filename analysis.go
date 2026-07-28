@@ -674,6 +674,9 @@ func (r nameResolver) ResolveName(name string) sema.NameState {
 }
 
 func (r nameResolver) ResolveCallable(name string) (sema.Callable, bool) {
+	if _, ok := r.macros[name]; ok {
+		return sema.Callable{}, false
+	}
 	if item, ok := r.global(name); ok && item.Kind.IsCallable() {
 		return sema.Callable{
 			ReturnTag: item.Tag, ParamTags: item.ParamTags, MinArgs: item.MinArgs, MaxArgs: item.MaxArgs,

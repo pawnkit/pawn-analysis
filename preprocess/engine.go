@@ -306,7 +306,7 @@ type engine struct {
 	outputTokens int
 	truncated    bool
 	stopped      bool
-	includeStack map[string]bool
+	includeStack map[string]int
 
 	depthLimitWarned bool
 }
@@ -336,7 +336,7 @@ func run(src []byte, opts Options, ctx context.Context, cancellable bool) (*Resu
 		cancellable:  cancellable,
 		macros:       newMacroTable(),
 		opts:         opts,
-		includeStack: make(map[string]bool),
+		includeStack: make(map[string]int),
 		files:        []FileInfo{{URI: opts.URI, Content: src}},
 	}
 	for name, value := range opts.Predefined {

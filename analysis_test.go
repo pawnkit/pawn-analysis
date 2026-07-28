@@ -18,6 +18,20 @@ import (
 	"github.com/pawnkit/pawnkit-core/source"
 )
 
+type callableResolver map[string]sema.Callable
+
+func (r callableResolver) ResolveName(name string) sema.NameState {
+	if _, ok := r[name]; ok {
+		return sema.NameFound
+	}
+	return sema.NameUnknown
+}
+
+func (r callableResolver) ResolveCallable(name string) (sema.Callable, bool) {
+	callable, ok := r[name]
+	return callable, ok
+}
+
 func TestAnalyzeContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -469,6 +483,18 @@ func TestAnalyzeResolvesIncludedCallable(t *testing.T) {
 	}
 	if !foundArity {
 		t.Fatalf("included signature was not checked: %+v", result.Diagnostics)
+	}
+}
+
+func TestMacroOverridesExternalCallableArity(t *testing.T) {
+	text := []byte("#define SendClientMessage( va_SendClientMessage(\nmain() { SendClientMessage(1, 2, \"value %d\", 3); }\n")
+	result := analysis.Analyze(text, analysis.Options{
+		Names: callableResolver{"SendClientMessage": {MinArgs: 3, MaxArgs: 3}},
+	})
+	for _, item := range result.Diagnostics {
+		if item.Code == "pawn-analysis:sema/argument-count" {
+			t.Fatalf("macro call used external arity: %+v", item)
+		}
 	}
 }
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.20.1 - 2026-07-28
+
+### Fixed
+
+- Allow include guards to stop recursive include chains before reporting a
+  cycle.
+- Skip external argument checks when a macro replaces the callable.
+
 ## 0.20.0 - 2026-07-28
 
 ### Added

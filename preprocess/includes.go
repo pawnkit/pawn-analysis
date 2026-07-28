@@ -55,7 +55,7 @@ func (e *engine) handleInclude(f *frame, hash token.Token, optional bool) {
 		switch {
 		case !ok && !optional:
 			e.diag(f, CodeIncludeNotFound, diagnostic.SeverityError, "include target not found: "+path, inc.DirectiveSpan)
-		case ok && e.includeStack[uri]:
+		case ok && e.includeStack[uri] >= 2:
 			e.diag(f, CodeIncludeCycle, diagnostic.SeverityError, "include cycle detected: "+uri, inc.DirectiveSpan)
 			inc.Resolved = true
 			inc.ResolvedURI = uri
@@ -80,13 +80,16 @@ func (e *engine) handleInclude(f *frame, hash token.Token, optional bool) {
 			inc.ChildFile = childIndex
 			inc.HasChildFile = true
 
-			e.includeStack[uri] = true
+			e.includeStack[uri]++
 			child := &frame{
 				fileIndex: childIndex, source: content, toks: tokens,
 				uri: uri, depth: f.depth + 1, lineStart: true,
 			}
 			e.run(child)
-			delete(e.includeStack, uri)
+			e.includeStack[uri]--
+			if e.includeStack[uri] == 0 {
+				delete(e.includeStack, uri)
+			}
 		}
 	}
 

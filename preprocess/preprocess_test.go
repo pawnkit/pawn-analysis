@@ -232,6 +232,33 @@ func TestIncludeGuardPattern(t *testing.T) {
 	}
 }
 
+func TestIncludeGuardBreaksRecursiveInclude(t *testing.T) {
+	resolver := preprocess.MapResolver{
+		"a.inc": []byte("#if defined _INC_A\n#endinput\n#endif\n#define _INC_A\n#include \"b.inc\"\n"),
+		"b.inc": []byte("#include \"a.inc\"\n"),
+	}
+	result := preprocess.Run([]byte("#include \"a.inc\"\n"), preprocess.Options{Resolver: resolver})
+	for _, item := range result.Diagnostics {
+		if item.Code == preprocess.CodeIncludeCycle {
+			t.Fatalf("guarded include reported a cycle: %+v", item)
+		}
+	}
+}
+
+func TestUnguardedRecursiveIncludeReportsCycle(t *testing.T) {
+	resolver := preprocess.MapResolver{
+		"a.inc": []byte("#include \"b.inc\"\n"),
+		"b.inc": []byte("#include \"a.inc\"\n"),
+	}
+	result := preprocess.Run([]byte("#include \"a.inc\"\n"), preprocess.Options{Resolver: resolver})
+	for _, item := range result.Diagnostics {
+		if item.Code == preprocess.CodeIncludeCycle {
+			return
+		}
+	}
+	t.Fatalf("cycle diagnostic missing: %+v", result.Diagnostics)
+}
+
 func TestTokenCacheProducesIdenticalResultsAcrossRuns(t *testing.T) {
 	resolver := preprocess.MapResolver{
 		"helper.inc": []byte("#define HELPER_VALUE 7\nstock Helper() { return HELPER_VALUE; }\n"),

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.20.2 - 2026-07-28
+
+### Added
+
+- Expose the target callable of forwarding macros.
+
 ## 0.20.1 - 2026-07-28
 
 ### Fixed

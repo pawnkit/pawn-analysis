@@ -16,6 +16,17 @@ type delayedCancelContext struct {
 	after  int32
 }
 
+func TestForwardingMacroExposesReplacementCallable(t *testing.T) {
+	result := preprocess.Run([]byte("#define PlayerDialog_Show(%0,%1, \\\n Dialog_Open(%0,#%1,\n"), preprocess.Options{})
+	macro, ok := result.Macros["PlayerDialog_Show"]
+	if !ok {
+		t.Fatal("macro missing")
+	}
+	if got, ok := macro.ReplacementCallable(); !ok || got != "Dialog_Open" {
+		t.Fatalf("replacement callable = %q, %v; macro = %#v", got, ok, macro)
+	}
+}
+
 func (c *delayedCancelContext) Deadline() (time.Time, bool) { return time.Time{}, false }
 func (c *delayedCancelContext) Done() <-chan struct{}       { return nil }
 func (c *delayedCancelContext) Value(any) any               { return nil }

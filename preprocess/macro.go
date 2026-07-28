@@ -1,6 +1,10 @@
 package preprocess
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/pawnkit/pawn-parser/token"
+)
 
 // MacroKind distinguishes object-like from function-like macros.
 type MacroKind uint8
@@ -28,6 +32,34 @@ type Macro struct {
 	Body            []ptok
 	File            uint32
 	DefSpan         ByteRange
+}
+
+// ReplacementCallable returns the function called by a forwarding macro.
+func (m Macro) ReplacementCallable() (string, bool) {
+	if m.FlexiblePattern {
+		name, lowest := "", m.ParamCount
+		for candidate, slot := range m.NamedParams {
+			if slot < lowest {
+				name, lowest = candidate, slot
+			}
+		}
+		if name != "" {
+			return name, true
+		}
+	}
+	for index := 0; index < len(m.Body); index++ {
+		if m.Body[index].Kind != token.Identifier {
+			continue
+		}
+		next := index + 1
+		for next < len(m.Body) && m.Body[next].Kind.IsTrivia() {
+			next++
+		}
+		if next < len(m.Body) && m.Body[next].Kind == token.LParen {
+			return m.Body[index].text, true
+		}
+	}
+	return "", false
 }
 
 type macroTable struct {

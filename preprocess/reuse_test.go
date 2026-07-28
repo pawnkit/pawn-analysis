@@ -46,7 +46,7 @@ func TestReuseTriviaContextRejectsMovedTokens(t *testing.T) {
 
 func TestReuseCompatibleContext(t *testing.T) {
 	before := preprocess.Run([]byte("stock Work() { return 1; }\n"), preprocess.Options{})
-	after, changes, reused, err := preprocess.ReuseCompatibleContext(
+	after, edit, reused, err := preprocess.ReuseCompatibleContext(
 		context.Background(),
 		[]byte("stock Work() { return 2; }\n"),
 		"input.pwn",
@@ -56,11 +56,33 @@ func TestReuseCompatibleContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reused || len(changes) != 1 {
-		t.Fatalf("reused = %v, changes = %#v", reused, changes)
+	if !reused || edit.Before.Start == edit.Before.End || edit.After.Start == edit.After.End {
+		t.Fatalf("reused = %v, edit = %#v", reused, edit)
 	}
 	if string(after.Source) != "stock Work() { return 2; }\n" {
 		t.Fatalf("source = %q", after.Source)
+	}
+}
+
+func TestReuseCompatibleContextShiftsFollowingDirectives(t *testing.T) {
+	initial := []byte("stock Work() { return 1; }\n#include <shared>\n")
+	final := []byte("stock Work() { return 1 + 2; }\n#include <shared>\n")
+	before := preprocess.Run(initial, preprocess.Options{})
+	after, edit, reused, err := preprocess.ReuseCompatibleContext(
+		context.Background(), final, "input.pwn", nil, before,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reused {
+		t.Fatal("preprocessing was not reused")
+	}
+	if len(after.Includes) != 1 {
+		t.Fatalf("includes = %#v", after.Includes)
+	}
+	delta := edit.After.End - edit.Before.End
+	if got, want := after.Includes[0].DirectiveSpan.Start, before.Includes[0].DirectiveSpan.Start+delta; got != want {
+		t.Fatalf("include start = %d, want %d", got, want)
 	}
 }
 

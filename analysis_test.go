@@ -308,6 +308,28 @@ func TestAnalyzeKeepsExpandedOutputExactByDefault(t *testing.T) {
 	}
 }
 
+func TestAnalyzeReusesDependencyGraphForLocalInsertion(t *testing.T) {
+	includes := preprocess.MapResolver{"shared": bytes.Repeat([]byte("stock Included() {}\n"), 20)}
+	initial := []byte("#include <shared>\nstock Work() { return 1; }\nstock Keep() { return 2; }\n")
+	final := []byte("#include <shared>\nstock Work() { return 1 + 2; }\nstock Keep() { return 2; }\n")
+	opts := analysis.Options{
+		Includes: includes, RetainExpanded: true, Revision: "project:1",
+		ReuseCompatibleExpansion: true,
+	}
+	before := analysis.Analyze(initial, opts)
+	opts.Previous = before
+	after := analysis.Analyze(final, opts)
+	if !after.Reuse.CompatibleExpansion {
+		t.Fatal("dependency graph was not reused")
+	}
+	clean := analysis.Analyze(final, analysis.Options{
+		Includes: includes, RetainExpanded: true, Revision: "project:1",
+	})
+	if !reflect.DeepEqual(after.Diagnostics, clean.Diagnostics) {
+		t.Fatalf("incremental diagnostics differ:\ngot  %#v\nwant %#v", after.Diagnostics, clean.Diagnostics)
+	}
+}
+
 func TestAnalyzeRebuildsExpandedViewWhenTriviaMovesTokens(t *testing.T) {
 	before := analysis.Analyze(
 		[]byte("stock  Work() { return 1; }\n"),

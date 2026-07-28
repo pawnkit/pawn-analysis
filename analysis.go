@@ -85,7 +85,7 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 	var pre *preprocess.Result
 	var err error
 	reusedPreprocess := false
-	var localChanges []preprocess.ByteRange
+	var localEdit preprocess.CompatibleEdit
 	localCandidate := false
 	if opts.Previous != nil && opts.Revision != "" && opts.Previous.revision == opts.Revision {
 		pre, reusedPreprocess, err = preprocess.ReuseTriviaContext(
@@ -93,7 +93,7 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		)
 		if err == nil && !reusedPreprocess && opts.ReuseCompatibleExpansion &&
 			worthwhileLocalReuse(opts.Previous.Preprocess) {
-			pre, localChanges, localCandidate, err = preprocess.ReuseCompatibleContext(
+			pre, localEdit, localCandidate, err = preprocess.ReuseCompatibleContext(
 				ctx, text, uri.String(), opts.TokenCache, opts.Previous.Preprocess,
 			)
 			reusedPreprocess = localCandidate
@@ -225,7 +225,7 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 	addDiagnosticDocs(diagnostics)
 	stage = beginStage(opts.Trace, StageDeclarations)
 	declarations := parser.BuildDeclarationIndex(parsed)
-	if localCandidate && !reusableLocalEdit(opts.Previous, parsed, declarations, table, localChanges) {
+	if localCandidate && !reusableLocalEdit(opts.Previous, parsed, declarations, table, localEdit) {
 		fallback := opts
 		fallback.Previous = nil
 		return AnalyzeContext(ctx, text, fallback)
@@ -341,54 +341,46 @@ func reusableLocalEdit(
 	currentParse *parser.CompactFile,
 	current parser.DeclarationIndex,
 	currentSymbols *symbol.Table,
-	changes []preprocess.ByteRange,
+	edit preprocess.CompatibleEdit,
 ) bool {
-	if previous == nil || previous.Symbols == nil || currentSymbols == nil ||
+	if previous == nil || previous.Parse == nil || previous.Symbols == nil || currentSymbols == nil ||
 		!previous.Declarations.Reliable() || !current.Reliable() ||
 		previous.Declarations.Len() != current.Len() ||
 		previous.Symbols.ExportFingerprint() != currentSymbols.ExportFingerprint() {
 		return false
 	}
-	if changesTouchMacroInvocations(currentParse.Syntax(), changes, previous.Preprocess.Macros) {
+	if changeTouchesMacroInvocation(currentParse.Syntax(), edit.After, previous.Preprocess.Macros) ||
+		changeTouchesMacroInvocation(previous.Parse.Syntax(), edit.Before, previous.Preprocess.Macros) {
 		return false
 	}
-	for _, change := range changes {
-		found := false
-		for position := range current.Len() {
-			now, _ := current.At(position)
-			before, _ := previous.Declarations.At(position)
-			if now.Identity != before.Identity ||
-				now.Kind != parser.KindFunctionDefinition ||
-				before.Kind != parser.KindFunctionDefinition {
-				continue
-			}
-			if change.Start >= now.Range.Start && change.End <= now.Range.End &&
-				change.Start >= before.Range.Start && change.End <= before.Range.End {
-				found = true
-				break
-			}
+	for position := range current.Len() {
+		now, _ := current.At(position)
+		before, _ := previous.Declarations.At(position)
+		if now.Identity != before.Identity ||
+			now.Kind != parser.KindFunctionDefinition ||
+			before.Kind != parser.KindFunctionDefinition {
+			continue
 		}
-		if !found {
-			return false
+		if edit.After.Start >= now.Range.Start && edit.After.End <= now.Range.End &&
+			edit.Before.Start >= before.Range.Start && edit.Before.End <= before.Range.End {
+			return true
 		}
 	}
-	return len(changes) != 0
+	return false
 }
 
-func changesTouchMacroInvocations(
+func changeTouchesMacroInvocation(
 	root parser.SyntaxNode,
-	changes []preprocess.ByteRange,
+	change preprocess.ByteRange,
 	macros map[string]preprocess.Macro,
 ) bool {
 	declarations := root.Declarations()
 	for declarations.Next() {
 		declaration := declarations.Declaration()
 		rng := declaration.Range()
-		for _, change := range changes {
-			if change.Start >= rng.Start && change.End <= rng.End &&
-				changesTouchMacroInvocation(declaration, []preprocess.ByteRange{change}, macros) {
-				return true
-			}
+		if change.Start >= rng.Start && change.End <= rng.End &&
+			changesTouchMacroInvocation(declaration, change, macros) {
+			return true
 		}
 	}
 	return false
@@ -396,19 +388,16 @@ func changesTouchMacroInvocations(
 
 func changesTouchMacroInvocation(
 	node parser.SyntaxNode,
-	changes []preprocess.ByteRange,
+	change preprocess.ByteRange,
 	macros map[string]preprocess.Macro,
 ) bool {
 	if !node.Valid() {
 		return false
 	}
 	rng := node.Range()
-	overlaps := false
-	for _, change := range changes {
-		if change.Start < rng.End && change.End > rng.Start {
-			overlaps = true
-			break
-		}
+	overlaps := change.Start < rng.End && change.End > rng.Start
+	if change.Start == change.End {
+		overlaps = change.Start >= rng.Start && change.Start <= rng.End
 	}
 	if !overlaps {
 		return false
@@ -425,7 +414,7 @@ func changesTouchMacroInvocation(
 	}
 	children := node.Children()
 	for children.Next() {
-		if changesTouchMacroInvocation(children.Node(), changes, macros) {
+		if changesTouchMacroInvocation(children.Node(), change, macros) {
 			return true
 		}
 	}

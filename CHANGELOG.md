@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.17.0 - 2026-07-28
+
+### Performance
+
+- Extend compatible dependency-graph reuse to local insertions and deletions.
+- Shift later directive ranges when a local edit changes source length.
+
 ## 0.16.0 - 2026-07-28
 
 ### Added

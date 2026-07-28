@@ -35,51 +35,35 @@ func ReuseTriviaContext(
 	return &result, true, nil
 }
 
-// ReuseCompatibleContext retains the dependency graph for a same-width token
-// edit. Expanded source still contains the previous token spelling.
+// CompatibleEdit maps one changed range between source revisions.
+type CompatibleEdit struct {
+	Before ByteRange
+	After  ByteRange
+}
+
+// ReuseCompatibleContext retains the dependency graph for a local token edit.
+// Expanded source still contains the previous local body.
 func ReuseCompatibleContext(
 	ctx context.Context,
 	src []byte,
 	uri string,
 	cache *TokenCache,
 	previous *Result,
-) (*Result, []ByteRange, bool, error) {
-	if previous == nil || len(src) != len(previous.Source) {
-		return nil, nil, false, nil
+) (*Result, CompatibleEdit, bool, error) {
+	if previous == nil {
+		return nil, CompatibleEdit{}, false, nil
+	}
+	edit, changed := compatibleEdit(previous.Source, src)
+	if !changed || directiveRange(previous.Source, edit.Before) || directiveRange(src, edit.After) {
+		return nil, CompatibleEdit{}, false, nil
 	}
 	tokens, err := cache.tokenizeContext(ctx, true, uri, src)
 	if err != nil {
-		return nil, nil, false, err
+		return nil, CompatibleEdit{}, false, err
 	}
-	if len(tokens) != len(previous.OriginalTokens) {
-		return nil, nil, false, nil
-	}
-	changed := make([]ByteRange, 0, 1)
-	for i := range tokens {
-		current, before := tokens[i], previous.OriginalTokens[i]
-		if current.Kind != before.Kind ||
-			current.Start != before.Start ||
-			current.End != before.End ||
-			!sameTrivia(current.LeadingTrivia, before.LeadingTrivia) ||
-			!sameTrivia(current.TrailingTrivia, before.TrailingTrivia) {
-			return nil, nil, false, nil
-		}
-		if current.Text(src) == before.Text(previous.Source) {
-			continue
-		}
-		if directiveToken(tokens, i) {
-			return nil, nil, false, nil
-		}
-		if _, macro := previous.Macros[before.Text(previous.Source)]; macro {
-			return nil, nil, false, nil
-		}
-		if _, macro := previous.Macros[current.Text(src)]; macro {
-			return nil, nil, false, nil
-		}
-		changed = append(changed, ByteRange{Start: current.Start.Offset, End: current.End.Offset})
-	}
-	if len(changed) == 0 {
-		return nil, nil, false, nil
+	if touchesMacro(tokens, src, edit.After, previous.Macros) ||
+		touchesMacro(previous.OriginalTokens, previous.Source, edit.Before, previous.Macros) {
+		return nil, CompatibleEdit{}, false, nil
 	}
 
 	result := *previous
@@ -89,30 +73,112 @@ func ReuseCompatibleContext(
 	if len(result.Files) != 0 {
 		result.Files[0].Content = src
 	}
-	return &result, changed, true, nil
+	result.Branches = append([]Branch(nil), previous.Branches...)
+	for i := range result.Branches {
+		if result.Branches[i].File != 0 {
+			continue
+		}
+		result.Branches[i].DirectiveSpan = shiftRange(result.Branches[i].DirectiveSpan, edit)
+		result.Branches[i].ConditionSpan = shiftRange(result.Branches[i].ConditionSpan, edit)
+		result.Branches[i].BodySpan = shiftRange(result.Branches[i].BodySpan, edit)
+	}
+	result.Includes = append([]Include(nil), previous.Includes...)
+	for i := range result.Includes {
+		if result.Includes[i].File == 0 {
+			result.Includes[i].DirectiveSpan = shiftRange(result.Includes[i].DirectiveSpan, edit)
+		}
+	}
+	result.Diagnostics = append([]Diagnostic(nil), previous.Diagnostics...)
+	for i := range result.Diagnostics {
+		if result.Diagnostics[i].File == 0 {
+			result.Diagnostics[i].Range = shiftRange(result.Diagnostics[i].Range, edit)
+		}
+	}
+	result.Macros = make(map[string]Macro, len(previous.Macros))
+	for name, macro := range previous.Macros {
+		if macro.File == 0 {
+			macro.DefSpan = shiftRange(macro.DefSpan, edit)
+		}
+		result.Macros[name] = macro
+	}
+	return &result, edit, true, nil
 }
 
-func directiveToken(tokens []token.Token, position int) bool {
-	for position >= 0 {
-		current := tokens[position]
-		if current.Kind == token.Hash {
+func compatibleEdit(before, after []byte) (CompatibleEdit, bool) {
+	start := 0
+	for start < len(before) && start < len(after) && before[start] == after[start] {
+		start++
+	}
+	beforeEnd, afterEnd := len(before), len(after)
+	for beforeEnd > start && afterEnd > start && before[beforeEnd-1] == after[afterEnd-1] {
+		beforeEnd--
+		afterEnd--
+	}
+	return CompatibleEdit{
+		Before: ByteRange{Start: start, End: beforeEnd},
+		After:  ByteRange{Start: start, End: afterEnd},
+	}, start != beforeEnd || start != afterEnd
+}
+
+func directiveRange(src []byte, changed ByteRange) bool {
+	start := changed.Start
+	if start == len(src) && start > 0 {
+		start--
+	}
+	for start > 0 && src[start-1] != '\n' {
+		start--
+	}
+	end := changed.End
+	for end < len(src) && src[end] != '\n' {
+		end++
+	}
+	for line := start; line <= end && line < len(src); {
+		lineEnd := line
+		for lineEnd < len(src) && src[lineEnd] != '\n' {
+			lineEnd++
+		}
+		position := line
+		for position < lineEnd && (src[position] == ' ' || src[position] == '\t') {
+			position++
+		}
+		if position < lineEnd && src[position] == '#' {
 			return true
 		}
-		for _, trivia := range current.LeadingTrivia {
-			if trivia.Kind == token.Newline {
-				return false
-			}
-		}
-		if position > 0 {
-			for _, trivia := range tokens[position-1].TrailingTrivia {
-				if trivia.Kind == token.Newline {
-					return false
-				}
-			}
-		}
-		position--
+		line = lineEnd + 1
 	}
 	return false
+}
+
+func touchesMacro(tokens []token.Token, src []byte, changed ByteRange, macros map[string]Macro) bool {
+	for _, current := range tokens {
+		if current.End.Offset < changed.Start || current.Start.Offset > changed.End {
+			continue
+		}
+		if _, macro := macros[current.Text(src)]; macro {
+			return true
+		}
+	}
+	return false
+}
+
+func shiftRange(current ByteRange, edit CompatibleEdit) ByteRange {
+	return ByteRange{
+		Start: shiftOffset(current.Start, edit),
+		End:   shiftOffset(current.End, edit),
+	}
+}
+
+func shiftOffset(offset int, edit CompatibleEdit) int {
+	if offset <= edit.Before.Start {
+		return offset
+	}
+	if offset >= edit.Before.End {
+		return offset + edit.After.End - edit.Before.End
+	}
+	if offset-edit.Before.Start > edit.After.End-edit.After.Start {
+		return edit.After.End
+	}
+	return edit.After.Start + offset - edit.Before.Start
 }
 
 func sameLexicalLayout(leftSource []byte, left []token.Token, rightSource []byte, right []token.Token) bool {

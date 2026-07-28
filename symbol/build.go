@@ -44,7 +44,7 @@ func BuildMappedDeclarationsContext(
 	file source.FileID,
 	files func(uint32) source.FileID,
 ) (*Table, error) {
-	return buildDeclarations(ctx, root, file, files, false)
+	return buildDeclarations(ctx, root, file, files, nil, false)
 }
 
 // BuildMappedNavigationContext keeps details for the active file.
@@ -54,7 +54,18 @@ func BuildMappedNavigationContext(
 	file source.FileID,
 	files func(uint32) source.FileID,
 ) (*Table, error) {
-	return buildDeclarations(ctx, root, file, files, true)
+	return buildDeclarations(ctx, root, file, files, nil, true)
+}
+
+// BuildMappedNavigationWithSpansContext keeps active-file details and uses
+// mapSpan to map expanded nodes back to source files.
+func BuildMappedNavigationWithSpansContext(
+	ctx context.Context,
+	root parser.SyntaxNode,
+	file source.FileID,
+	mapSpan func(parser.SyntaxNode) (source.Span, bool),
+) (*Table, error) {
+	return buildDeclarations(ctx, root, file, nil, mapSpan, true)
 }
 
 func buildDeclarations(
@@ -62,6 +73,7 @@ func buildDeclarations(
 	root parser.SyntaxNode,
 	file source.FileID,
 	files func(uint32) source.FileID,
+	mapSpan func(parser.SyntaxNode) (source.Span, bool),
 	rootDetails bool,
 ) (*Table, error) {
 	if err := ctx.Err(); err != nil {
@@ -69,7 +81,7 @@ func buildDeclarations(
 	}
 	b := &builder{
 		ctx: ctx, cancellable: true, declarationsOnly: true, rootDetails: rootDetails,
-		file: file, files: files, table: &Table{File: file},
+		file: file, files: files, mapSpan: mapSpan, table: &Table{File: file},
 	}
 	fileScope := b.newScope(ScopeFile, 0)
 	decls := root.Declarations()
@@ -149,6 +161,7 @@ type builder struct {
 	rootDetails      bool
 	file             source.FileID
 	files            func(uint32) source.FileID
+	mapSpan          func(parser.SyntaxNode) (source.Span, bool)
 	table            *Table
 }
 
@@ -239,6 +252,11 @@ func (b *builder) reference(scope ID, name string, span source.Span, isCall bool
 }
 
 func (b *builder) spanOf(n parser.SyntaxNode) source.Span {
+	if b.mapSpan != nil {
+		if span, ok := b.mapSpan(n); ok {
+			return span
+		}
+	}
 	if origin, ok := n.Token().Origin(); ok && b.files != nil {
 		span := origin.Span()
 		file := b.files(span.File)

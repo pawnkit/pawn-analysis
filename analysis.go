@@ -156,7 +156,10 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 			return
 		}
 		expanded, expandedErr = parser.ParseTokensCompactContext(
-			ctx, pre.ExpandedSource, pre.ExpandedTokens, parser.ParseOptions{},
+			ctx,
+			pre.ExpandedSource,
+			pre.ExpandedTokens,
+			parser.ParseOptions{DiscardTokens: true, DiscardTrivia: true},
 		)
 		current.end(ctx, 0)
 	}
@@ -198,7 +201,12 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		if reusedExpanded {
 			stage.end(ctx, 1)
 		} else {
-			expandedTable, err = symbol.BuildMappedNavigationContext(ctx, expanded.Syntax(), fileID, mapFile)
+			expandedTable, err = symbol.BuildMappedNavigationWithSpansContext(
+				ctx,
+				expanded.Syntax(),
+				fileID,
+				expandedSpanMapper(pre.ExpandedTokens, mapFile),
+			)
 			if err != nil {
 				stage.end(ctx, 0)
 				return nil, err
@@ -531,6 +539,31 @@ func expandedTableDiagnostics(table *symbol.Table, root source.FileID) []diagnos
 		}
 	}
 	return items
+}
+
+func expandedSpanMapper(tokens []token.Token, files func(uint32) source.FileID) func(parser.SyntaxNode) (source.Span, bool) {
+	return func(node parser.SyntaxNode) (source.Span, bool) {
+		rng := node.Token().Range()
+		index := sort.Search(len(tokens), func(i int) bool {
+			return tokens[i].Start.Offset >= rng.Start
+		})
+		for index < len(tokens) && tokens[index].Start.Offset == rng.Start {
+			item := tokens[index]
+			if item.End.Offset == rng.End && item.Origin != nil {
+				origin := item.Origin.Span
+				file := files(origin.File)
+				if file.IsValid() {
+					return source.Span{
+						File:  file,
+						Start: source.Offset(origin.Start.Offset),
+						End:   source.Offset(origin.End.Offset),
+					}, true
+				}
+			}
+			index++
+		}
+		return source.Span{}, false
+	}
 }
 
 func hasRedeclarationDiagnostics(table *symbol.Table) bool {

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.18.0 - 2026-07-28
+
+### Performance
+
+- Map expanded symbols from the retained preprocessor tokens instead of
+  keeping a second token copy in the parser.
+- Reduced the SAFW cold workspace diagnostic response from about 10.7 seconds
+  to 7.2 seconds on the reference machine.
+
 ## 0.17.0 - 2026-07-28
 
 ### Performance

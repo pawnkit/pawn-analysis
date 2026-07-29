@@ -1,10 +1,17 @@
 # Changelog
 
+## 0.22.1 - 2026-07-29
+
+### Performance
+
+- Removed the function name cache after editor benchmarks showed higher
+  latency and memory use.
+
 ## 0.22.0 - 2026-07-29
 
 ### Performance
 
-- Reuse name and call-arity checks for unchanged functions.
+- Reused name and call-arity checks for unchanged functions.
 
 ## 0.21.0 - 2026-07-29
 

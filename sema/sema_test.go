@@ -3,7 +3,6 @@ package sema_test
 import (
 	"context"
 	"errors"
-	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -49,31 +48,6 @@ func TestCheckNamesContextStopsDuringResolution(t *testing.T) {
 	}
 	if len(result.Diagnostics) != 0 || len(result.Unknown) != 0 {
 		t.Fatal("cancelled name resolution returned partial results")
-	}
-}
-
-func TestCheckNamesCachedContextReusesUnchangedFunction(t *testing.T) {
-	before := tableFor(t, "stock First() { MissingA(); }\nstock Second() { MissingB(); }\n")
-	_, cache, reused, err := sema.CheckNamesCachedContext(
-		context.Background(), before, sema.MapResolver{}, nil, "project:1",
-	)
-	if err != nil || reused != 0 {
-		t.Fatalf("first check: reused=%d err=%v", reused, err)
-	}
-
-	after := tableFor(t, "stock First() { { MissingA(); } }\nstock Second() { MissingB(); }\n")
-	got, _, reused, err := sema.CheckNamesCachedContext(
-		context.Background(), after, sema.MapResolver{}, cache, "project:1",
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if reused != 1 {
-		t.Fatalf("reused functions = %d, want 1", reused)
-	}
-	want := sema.CheckNames(after, sema.MapResolver{})
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("cached result differs:\ngot  %#v\nwant %#v", got, want)
 	}
 }
 

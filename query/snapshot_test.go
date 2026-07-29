@@ -79,8 +79,7 @@ func TestSnapshotReusesUnchangedFunctionControlFlow(t *testing.T) {
 	uri := source.FileURI("main.pwn")
 	firstText := []byte("stock First() { return 1; }\nstock Second(value) { new Float:mismatch = 1; new result = value; if (result > 0) result--; while (result > 1) result--; return result; }\n")
 	snapshot := New(Document{URI: uri, Text: firstText, Version: 1})
-	options := analysis.Options{Revision: "project:1", ReuseCompatibleExpansion: true}
-	if _, err := snapshot.Analyze(context.Background(), uri, options); err != nil {
+	if _, err := snapshot.Analyze(context.Background(), uri, analysis.Options{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -89,22 +88,19 @@ func TestSnapshotReusesUnchangedFunctionControlFlow(t *testing.T) {
 	if !ok {
 		t.Fatal("update rejected")
 	}
-	got, err := next.Analyze(context.Background(), uri, options)
+	got, err := next.Analyze(context.Background(), uri, analysis.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.Reuse.ControlFlow != 1 {
 		t.Fatalf("reused CFGs = %d, want 1", got.Reuse.ControlFlow)
 	}
-	if got.Reuse.Names != 1 {
-		t.Fatalf("reused name checks = %d, want 1", got.Reuse.Names)
-	}
 	if got.Reuse.Tags != 1 {
 		t.Fatalf("reused tag checks = %d, want 1", got.Reuse.Tags)
 	}
 
 	clean, err := New(Document{URI: uri, Text: secondText, Version: 2}).Analyze(
-		context.Background(), uri, options,
+		context.Background(), uri, analysis.Options{},
 	)
 	if err != nil {
 		t.Fatal(err)

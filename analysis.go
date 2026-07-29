@@ -212,6 +212,9 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 	if reusedSymbols {
 		table = opts.Previous.Symbols
 		stage.end(ctx, 1)
+	} else if patched, ok := patchedOriginalSymbols(pre, opts.Previous, localEdit, localCandidate, stableOriginalPositions, fileID); ok {
+		table = patched
+		stage.end(ctx, 1)
 	} else {
 		table, err = symbol.BuildContext(ctx, parsed.Syntax(), fileID)
 		if err != nil {
@@ -286,6 +289,42 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		return retainExpanded(prepared, opts.RetainExpanded), nil
 	}
 	return CompleteContext(ctx, prepared, opts)
+}
+
+func patchedOriginalSymbols(
+	current *preprocess.Result,
+	previous *Result,
+	edit preprocess.CompatibleEdit,
+	localCandidate bool,
+	stablePositions bool,
+	file source.FileID,
+) (*symbol.Table, bool) {
+	if !localCandidate || !stablePositions || current == nil || previous == nil ||
+		previous.Symbols == nil || edit.Before != edit.After {
+		return nil, false
+	}
+	before, beforeOK := identifierContaining(previous.Preprocess.OriginalTokens, edit.Before)
+	after, afterOK := identifierContaining(current.OriginalTokens, edit.After)
+	if !beforeOK || !afterOK || before.Start != after.Start || before.End != after.End {
+		return nil, false
+	}
+	span := source.Span{File: file, Start: source.Offset(after.Start.Offset), End: source.Offset(after.End.Offset)}
+	return symbol.PatchReference(previous.Symbols, span, after.Text(current.Source))
+}
+
+func identifierContaining(tokens []token.Token, changed preprocess.ByteRange) (token.Token, bool) {
+	var found token.Token
+	for _, current := range tokens {
+		if current.Kind != token.Identifier ||
+			changed.Start < current.Start.Offset || changed.End > current.End.Offset {
+			continue
+		}
+		if found.Kind != token.Invalid {
+			return token.Token{}, false
+		}
+		found = current
+	}
+	return found, found.Kind != token.Invalid
 }
 
 func reusableExpanded(current *preprocess.Result, previous *Result) bool {
@@ -382,7 +421,11 @@ func reusableOriginalSymbols(
 
 func rangeTouchesIdentifier(tokens []token.Token, changed preprocess.ByteRange) bool {
 	for _, current := range tokens {
-		if current.End.Offset < changed.Start || current.Start.Offset > changed.End {
+		overlaps := current.Start.Offset < changed.End && current.End.Offset > changed.Start
+		if changed.Start == changed.End {
+			overlaps = changed.Start > current.Start.Offset && changed.Start < current.End.Offset
+		}
+		if !overlaps {
 			continue
 		}
 		if current.Kind == token.Identifier {

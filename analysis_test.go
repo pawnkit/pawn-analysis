@@ -358,6 +358,40 @@ func TestAnalyzeReusedSyntaxReadsCurrentSource(t *testing.T) {
 	}
 }
 
+func TestAnalyzePatchesChangedIdentifierReference(t *testing.T) {
+	const revision = "project:1"
+	beforeText := []byte("new first;\nnew other;\nstock Work() { return first; }\n")
+	afterText := []byte("new first;\nnew other;\nstock Work() { return other; }\n")
+	before := analysis.Analyze(beforeText, analysis.Options{Revision: revision})
+	var reusedSymbols int
+	after, err := analysis.AnalyzeContext(context.Background(), afterText, analysis.Options{
+		Previous: before, Revision: revision, ReuseCompatibleExpansion: true,
+		Trace: func(event analysis.TraceEvent) {
+			if event.Stage == analysis.StageSymbolsOriginal {
+				reusedSymbols = event.Reused
+			}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reusedSymbols != 1 || after.Symbols == before.Symbols {
+		t.Fatal("changed reference did not reuse the symbol table")
+	}
+	start := bytes.LastIndex(afterText, []byte("other"))
+	span := source.Span{
+		File: after.File, Start: source.Offset(start), End: source.Offset(start + len("other")),
+	}
+	item, ok := after.Symbols.ReferencedAt(span)
+	if !ok || item.Name != "other" {
+		t.Fatalf("resolved reference = %#v, found = %v", item, ok)
+	}
+	clean := analysis.Analyze(afterText, analysis.Options{Revision: revision})
+	if !reflect.DeepEqual(after.Diagnostics, clean.Diagnostics) {
+		t.Fatal("patched reference diagnostics differ from clean analysis")
+	}
+}
+
 func TestAnalyzeRebuildsExpandedViewForNonLocalTokenEdit(t *testing.T) {
 	tests := []struct {
 		name   string

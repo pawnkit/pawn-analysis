@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.25.0 - 2026-07-29
+
+### Added
+
+- Patch a resolved symbol reference without rebuilding the full symbol table.
+
+### Performance
+
+- Reuse symbol data when an editor edit changes one resolved reference.
+
 ## 0.24.2 - 2026-07-29
 
 ### Added

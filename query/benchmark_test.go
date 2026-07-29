@@ -19,9 +19,11 @@ func syntheticGlobalGamemode(functions int) []byte {
 	for i := range functions {
 		fmt.Fprintf(&sb, "stock Func%d(playerid, value) {\n", i)
 		sb.WriteString("    new x = value + MAX_PLAYERS;\n")
+		sb.WriteString("    new y = x;\n")
 		for c := 0; c < 5 && c < i; c++ {
 			fmt.Fprintf(&sb, "    x = Func%d(playerid, x);\n", i-1-c)
 		}
+		sb.WriteString("    if (x > 10) x--;\n")
 		sb.WriteString("    return x;\n}\n\n")
 	}
 	return []byte(sb.String())
@@ -107,7 +109,7 @@ func BenchmarkIncrementalFunctionAnalysis(b *testing.B) {
 	const functions = 2000
 	uri := source.FileURI("gamemode.pwn")
 	text := syntheticGlobalGamemode(functions)
-	edit := strings.Index(string(text), "result > 10") + len("result > 1")
+	edit := strings.LastIndex(string(text), "x > 10") + len("x > 1")
 	snapshot := New(Document{URI: uri, Text: text, Version: 1})
 	opts := analysis.Options{Revision: "benchmark", ReuseCompatibleExpansion: true}
 	if _, err := snapshot.Analyze(context.Background(), uri, opts); err != nil {
@@ -146,6 +148,51 @@ func BenchmarkIncrementalFunctionAnalysis(b *testing.B) {
 	}
 	for stage, total := range stageTotals {
 		b.ReportMetric(float64(total)/float64(b.N), string(stage)+"-ns/op")
+	}
+}
+
+func BenchmarkIncrementalIdentifierReferenceAnalysis(b *testing.B) {
+	const functions = 2000
+	uri := source.FileURI("gamemode.pwn")
+	text := syntheticGlobalGamemode(functions)
+	edit := strings.LastIndex(string(text), "return x") + len("return ")
+	snapshot := New(Document{URI: uri, Text: text, Version: 1})
+	opts := analysis.Options{Revision: "benchmark", ReuseCompatibleExpansion: true}
+	if _, err := snapshot.Analyze(context.Background(), uri, opts); err != nil {
+		b.Fatal(err)
+	}
+
+	b.ReportAllocs()
+	b.SetBytes(int64(len(text)))
+	for version := int64(2); b.Loop(); version++ {
+		b.StopTimer()
+		nextText := append([]byte(nil), text...)
+		replacement := byte('y')
+		if version%2 != 0 {
+			replacement = 'x'
+		}
+		nextText[edit] = replacement
+		next, ok := snapshot.Update(Document{URI: uri, Text: nextText, Version: version})
+		if !ok {
+			b.Fatal("update rejected")
+		}
+		reusedSymbols := 0
+		runOpts := opts
+		runOpts.Trace = func(event analysis.TraceEvent) {
+			if event.Stage == analysis.StageSymbolsOriginal {
+				reusedSymbols = event.Reused
+			}
+		}
+		b.StartTimer()
+
+		if _, err := next.Analyze(context.Background(), uri, runOpts); err != nil {
+			b.Fatal(err)
+		}
+		if reusedSymbols != 1 {
+			b.Fatal("symbol table was rebuilt")
+		}
+		snapshot = next
+		text = nextText
 	}
 }
 

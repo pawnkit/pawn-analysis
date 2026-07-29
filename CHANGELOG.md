@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.23.1 - 2026-07-29
+
+### Performance
+
+- Reuse local symbol tables when a function edit cannot change declarations
+  or references.
+
 ## 0.23.0 - 2026-07-29
 
 ### Performance

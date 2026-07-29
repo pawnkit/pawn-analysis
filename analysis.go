@@ -197,12 +197,18 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		return nil, expandedErr
 	}
 	stage = beginStage(opts.Trace, StageSymbolsOriginal)
-	table, err = symbol.BuildContext(ctx, parsed.Syntax(), fileID)
-	if err != nil {
+	reusedSymbols := reusableOriginalSymbols(pre, opts.Previous, localEdit, localCandidate, reusedOriginal)
+	if reusedSymbols {
+		table = opts.Previous.Symbols
+		stage.end(ctx, 1)
+	} else {
+		table, err = symbol.BuildContext(ctx, parsed.Syntax(), fileID)
+		if err != nil {
+			stage.end(ctx, 0)
+			return nil, err
+		}
 		stage.end(ctx, 0)
-		return nil, err
 	}
-	stage.end(ctx, 0)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -340,6 +346,45 @@ func sameTriviaLayout(left, right []token.Trivia) bool {
 		}
 	}
 	return true
+}
+
+func reusableOriginalSymbols(
+	current *preprocess.Result,
+	previous *Result,
+	edit preprocess.CompatibleEdit,
+	localCandidate bool,
+	reusedSyntax bool,
+) bool {
+	if !localCandidate || !reusedSyntax || current == nil || previous == nil ||
+		previous.Symbols == nil || !previous.Declarations.Reliable() {
+		return false
+	}
+	insideFunction := false
+	for position := range previous.Declarations.Len() {
+		item, _ := previous.Declarations.At(position)
+		if item.Kind == parser.KindFunctionDefinition &&
+			edit.Before.Start >= item.Range.Start && edit.Before.End <= item.Range.End {
+			insideFunction = true
+			break
+		}
+	}
+	if !insideFunction {
+		return false
+	}
+	return !rangeTouchesIdentifier(current.OriginalTokens, edit.After) &&
+		!rangeTouchesIdentifier(previous.Preprocess.OriginalTokens, edit.Before)
+}
+
+func rangeTouchesIdentifier(tokens []token.Token, changed preprocess.ByteRange) bool {
+	for _, current := range tokens {
+		if current.End.Offset < changed.Start || current.Start.Offset > changed.End {
+			continue
+		}
+		if current.Kind == token.Identifier {
+			return true
+		}
+	}
+	return false
 }
 
 func sameByteBacking(left, right []byte) bool {

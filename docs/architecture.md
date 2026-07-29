@@ -42,7 +42,8 @@ file-level fingerprint. Both indexes are lazy.
 
 Function-body edits may reuse the include graph, unchanged tag checks, and
 unchanged CFGs. Edits that keep the same token kinds and positions also reuse
-the original syntax tree. Macro calls are indexed during preprocessing so this
+the original syntax tree. Function edits that do not touch identifiers also
+reuse the symbol table. Macro calls are indexed during preprocessing so this
 check does not scan the expanded token stream.
 
 The following changes force wider work:

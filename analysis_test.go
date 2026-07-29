@@ -239,7 +239,7 @@ func TestAnalyzeReusesExpandedViewForLocalTokenEdit(t *testing.T) {
 		[]byte("#include <shared>\nstock Work() { return 1; }\nstock Keep() { return 2; }\n"),
 		analysis.Options{Includes: includes, RetainExpanded: true, Revision: "project:1"},
 	)
-	reusedOriginal := 0
+	var reusedOriginal, reusedSymbols int
 	after, err := analysis.AnalyzeContext(
 		context.Background(),
 		[]byte("#include <shared>\nstock Work() { return 3; }\nstock Keep() { return 2; }\n"),
@@ -249,6 +249,9 @@ func TestAnalyzeReusesExpandedViewForLocalTokenEdit(t *testing.T) {
 			Trace: func(event analysis.TraceEvent) {
 				if event.Stage == analysis.StageParseOriginal {
 					reusedOriginal = event.Reused
+				}
+				if event.Stage == analysis.StageSymbolsOriginal {
+					reusedSymbols = event.Reused
 				}
 			},
 		},
@@ -264,6 +267,9 @@ func TestAnalyzeReusesExpandedViewForLocalTokenEdit(t *testing.T) {
 	}
 	if &after.Parse.Tree.Nodes[0] != &before.Parse.Tree.Nodes[0] {
 		t.Fatal("original syntax storage was not reused")
+	}
+	if reusedSymbols != 1 || after.Symbols != before.Symbols {
+		t.Fatal("unchanged original symbols were rebuilt")
 	}
 	if after.Reuse.Declarations == 0 {
 		t.Fatal("unchanged declaration was not reused")
@@ -299,6 +305,9 @@ func TestAnalyzeReusedSyntaxReadsCurrentSource(t *testing.T) {
 	}
 	if foundOld {
 		t.Fatal("reused syntax retained the previous identifier")
+	}
+	if after.Symbols == before.Symbols {
+		t.Fatal("symbols were reused after an identifier edit")
 	}
 }
 

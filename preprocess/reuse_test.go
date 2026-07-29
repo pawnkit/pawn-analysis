@@ -86,6 +86,28 @@ func TestReuseCompatibleContextShiftsFollowingDirectives(t *testing.T) {
 	}
 }
 
+func TestReuseCompatibleContextShiftsFollowingMacroInvocations(t *testing.T) {
+	initial := []byte("#define VALUE 1\nstock Work() { return 1; }\nnew result = VALUE;\n")
+	final := []byte("#define VALUE 1\nstock Work() { return 1 + 2; }\nnew result = VALUE;\n")
+	before := preprocess.Run(initial, preprocess.Options{})
+	after, edit, reused, err := preprocess.ReuseCompatibleContext(
+		context.Background(), final, "input.pwn", nil, before,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reused {
+		t.Fatal("preprocessing was not reused")
+	}
+	if len(after.MacroInvocations) != 1 {
+		t.Fatalf("invocations = %#v", after.MacroInvocations)
+	}
+	delta := edit.After.End - edit.Before.End
+	if got, want := after.MacroInvocations[0].Range.Start, before.MacroInvocations[0].Range.Start+delta; got != want {
+		t.Fatalf("invocation start = %d, want %d", got, want)
+	}
+}
+
 func TestReuseCompatibleContextRejectsDirectiveEdit(t *testing.T) {
 	before := preprocess.Run([]byte("#define VALUE 1\nstock Work() { return VALUE; }\n"), preprocess.Options{})
 	_, _, reused, err := preprocess.ReuseCompatibleContext(

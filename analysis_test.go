@@ -580,3 +580,33 @@ func BenchmarkAnalyzeGlobalScanScaling(b *testing.B) {
 		})
 	}
 }
+
+func BenchmarkAnalyzeCancellation50K(b *testing.B) {
+	text := syntheticGlobalGamemode(8000)
+	var cancellationTotal time.Duration
+
+	b.ReportAllocs()
+	b.SetBytes(int64(len(text)))
+	for b.Loop() {
+		ctx, cancel := context.WithCancel(context.Background())
+		var cancelledAt atomic.Int64
+		_, err := analysis.AnalyzeContext(ctx, text, analysis.Options{
+			RetainExpanded: true,
+			Trace: func(event analysis.TraceEvent) {
+				if event.Stage != analysis.StageParseOriginal {
+					return
+				}
+				now := time.Now().UnixNano()
+				if cancelledAt.CompareAndSwap(0, now) {
+					cancel()
+				}
+			},
+		})
+		cancel()
+		if !errors.Is(err, context.Canceled) {
+			b.Fatalf("error = %v, want cancellation", err)
+		}
+		cancellationTotal += time.Since(time.Unix(0, cancelledAt.Load()))
+	}
+	b.ReportMetric(float64(cancellationTotal.Nanoseconds())/float64(b.N), "cancel-ns/op")
+}

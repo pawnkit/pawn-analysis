@@ -45,19 +45,37 @@ func checkStates(
 	automatons := make(map[string]map[string]struct{})
 	implementations := make(map[string]stateImplementation)
 	fallbacks := make(map[string]source.Span)
+	used := make(map[string]bool)
+	var stateStatements []parser.SyntaxNode
 	var diagnostics []diagnostic.Diagnostic
 	walkSyntaxContext(root, &cancel, func(node parser.SyntaxNode) {
-		if node.Kind() != parser.KindFunctionDefinition && node.Kind() != parser.KindFunctionDeclaration {
+		switch node.Kind() {
+		case parser.KindCallExpression:
+			if function, ok := node.Field("function"); ok && function.Kind() == parser.KindIdentifier {
+				used[function.Text()] = true
+			}
+			return
+		case parser.KindStateStatement:
+			stateStatements = append(stateStatements, node)
+			return
+		case parser.KindFunctionDefinition, parser.KindFunctionDeclaration:
+		default:
 			return
 		}
 		selector, ok := node.Field("state")
 		if !ok {
+			if name, found := node.Field("name"); found && isPublicFunction(node) {
+				used[name.Text()] = true
+			}
 			return
 		}
 		automaton, states := parseStateSelector(selector.Text())
 		name, hasName := node.Field("name")
 		if !hasName {
 			return
+		}
+		if isPublicFunction(node) {
+			used[name.Text()] = true
 		}
 		if hasToken(node, token.KwForward) {
 			diagnostics = append(diagnostics, diagnostic.New(
@@ -131,22 +149,6 @@ func checkStates(
 	}
 	diagnostics = append(diagnostics, stateVariables...)
 
-	used := make(map[string]bool)
-	walkSyntaxContext(root, &cancel, func(node parser.SyntaxNode) {
-		switch node.Kind() {
-		case parser.KindCallExpression:
-			if function, ok := node.Field("function"); ok && function.Kind() == parser.KindIdentifier {
-				used[function.Text()] = true
-			}
-		case parser.KindFunctionDefinition, parser.KindFunctionDeclaration:
-			if name, ok := node.Field("name"); ok && isPublicFunction(node) {
-				used[name.Text()] = true
-			}
-		}
-	})
-	if cancel.err != nil {
-		return nil, cancel.err
-	}
 	implementationNames := make([]string, 0, len(implementations))
 	for name := range implementations {
 		implementationNames = append(implementationNames, name)
@@ -175,13 +177,13 @@ func checkStates(
 		}
 	}
 
-	walkSyntaxContext(root, &cancel, func(node parser.SyntaxNode) {
-		if node.Kind() != parser.KindStateStatement {
-			return
+	for _, node := range stateStatements {
+		if cancel.poll() {
+			return nil, cancel.err
 		}
 		first, ok := node.Field("state")
 		if !ok {
-			return
+			continue
 		}
 		automaton, state, location := "", first.Text(), first
 		if target, named := node.Field("target"); named {
@@ -197,7 +199,7 @@ func checkStates(
 				"pawn-analysis:sema/unknown-automaton", "pawn-analysis", diagnostic.SeverityError,
 				fmt.Sprintf("unknown automaton %q", name), location.Range().Span(file),
 			))
-			return
+			continue
 		}
 		if _, known := states[state]; !known {
 			name := automaton
@@ -209,9 +211,6 @@ func checkStates(
 				fmt.Sprintf("unknown state %q for automaton %q", state, name), location.Range().Span(file),
 			))
 		}
-	})
-	if cancel.err != nil {
-		return nil, cancel.err
 	}
 	return diagnostics, nil
 }

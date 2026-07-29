@@ -88,6 +88,12 @@ func ReuseCompatibleContext(
 			result.Includes[i].DirectiveSpan = shiftRange(result.Includes[i].DirectiveSpan, edit)
 		}
 	}
+	result.MacroInvocations = append([]MacroInvocation(nil), previous.MacroInvocations...)
+	for i := range result.MacroInvocations {
+		if result.MacroInvocations[i].File == 0 {
+			result.MacroInvocations[i].Range = shiftRange(result.MacroInvocations[i].Range, edit)
+		}
+	}
 	result.Diagnostics = append([]Diagnostic(nil), previous.Diagnostics...)
 	for i := range result.Diagnostics {
 		if result.Diagnostics[i].File == 0 {

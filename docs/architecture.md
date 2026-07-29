@@ -37,3 +37,20 @@ can change conditional control flow.
 Stable IDs are available through `symbol.Table.StableSymbolID`. They are not
 stored on local symbols. `symbol.Table.ExportFingerprint` computes the matching
 file-level fingerprint. Both indexes are lazy.
+
+## Invalidation
+
+Function-body edits may reuse the include graph, unchanged tag checks, and
+unchanged CFGs. Macro calls are indexed during preprocessing so this check does
+not scan the expanded token stream.
+
+The following changes force wider work:
+
+- Macro definitions and conditional directives rebuild preprocessing.
+- Include content changes require a new resolver revision.
+- Profile defines and API data require a new analysis revision.
+- Exported declarations invalidate resolver-dependent semantic results.
+- Resolved global constant changes invalidate every CFG.
+
+When an edit cannot be classified safely, analysis falls back to a clean run.
+Agreement tests compare incremental results with that clean result.

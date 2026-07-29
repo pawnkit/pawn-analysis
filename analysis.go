@@ -596,12 +596,9 @@ func macroInvocationRanges(pre *preprocess.Result) []preprocess.ByteRange {
 		return nil
 	}
 	unique := make(map[preprocess.ByteRange]struct{})
-	for _, item := range pre.ExpandedTokens {
-		for origin := item.Origin; origin != nil; origin = origin.Parent {
-			candidate := origin.Span
-			if origin.Macro != "" && candidate.File == 0 {
-				unique[preprocess.ByteRange{Start: candidate.Start.Offset, End: candidate.End.Offset}] = struct{}{}
-			}
+	for _, item := range pre.MacroInvocations {
+		if item.File == 0 {
+			unique[item.Range] = struct{}{}
 		}
 	}
 	ranges := make([]preprocess.ByteRange, 0, len(unique))

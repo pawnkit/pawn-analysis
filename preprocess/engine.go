@@ -116,6 +116,12 @@ type Include struct {
 	HasChildFile  bool
 }
 
+// MacroInvocation records a source range expanded as a macro.
+type MacroInvocation struct {
+	File  uint32
+	Range ByteRange
+}
+
 // Result is the immutable outcome of one [Run]. All slices are safe to
 // retain; nothing here is mutated after Run returns.
 //
@@ -129,16 +135,17 @@ type Include struct {
 // use each token's Origin chain (via github.com/pawnkit/pawn-parser's
 // SyntaxToken.Origin) to recover the true original location instead.
 type Result struct {
-	Files          []FileInfo // Files[0] is the root file.
-	Source         []byte
-	ExpandedSource []byte
-	OriginalTokens []token.Token
-	ExpandedTokens []token.Token
-	Branches       []Branch
-	Includes       []Include
-	Macros         map[string]Macro
-	Diagnostics    []Diagnostic
-	Truncated      bool
+	Files            []FileInfo // Files[0] is the root file.
+	Source           []byte
+	ExpandedSource   []byte
+	OriginalTokens   []token.Token
+	ExpandedTokens   []token.Token
+	Branches         []Branch
+	Includes         []Include
+	MacroInvocations []MacroInvocation
+	Macros           map[string]Macro
+	Diagnostics      []Diagnostic
+	Truncated        bool
 }
 
 // ToCoreDiagnostics maps all diagnostics to one file.
@@ -300,6 +307,7 @@ type engine struct {
 	expandedBuf  []byte
 	branches     []Branch
 	includes     []Include
+	invocations  []MacroInvocation
 	files        []FileInfo
 	diags        []Diagnostic
 	opts         Options
@@ -368,16 +376,17 @@ func run(src []byte, opts Options, ctx context.Context, cancellable bool) (*Resu
 	e.backfillPositions()
 
 	return &Result{
-		Files:          e.files,
-		Source:         src,
-		ExpandedSource: e.expandedBuf,
-		OriginalTokens: originalTokens,
-		ExpandedTokens: e.out,
-		Branches:       e.branches,
-		Includes:       e.includes,
-		Macros:         e.macros.snapshot(),
-		Diagnostics:    e.diags,
-		Truncated:      e.truncated,
+		Files:            e.files,
+		Source:           src,
+		ExpandedSource:   e.expandedBuf,
+		OriginalTokens:   originalTokens,
+		ExpandedTokens:   e.out,
+		Branches:         e.branches,
+		Includes:         e.includes,
+		MacroInvocations: e.invocations,
+		Macros:           e.macros.snapshot(),
+		Diagnostics:      e.diags,
+		Truncated:        e.truncated,
 	}, nil
 }
 

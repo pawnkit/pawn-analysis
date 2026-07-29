@@ -239,6 +239,36 @@ func TestPredefinedProfileChangeMatchesCleanAnalysis(t *testing.T) {
 	}
 }
 
+func TestMacroDefinitionEditMatchesCleanAnalysis(t *testing.T) {
+	uri := source.FileURI("main.pwn")
+	initial := []byte("#define VALUE 1\nmain() { return VALUE; }\n")
+	final := []byte("#define VALUE 2\nmain() { return VALUE; }\n")
+	opts := analysis.Options{Revision: "project:1", RetainExpanded: true}
+
+	snapshot := New(Document{URI: uri, Text: initial, Version: 1})
+	if _, err := snapshot.Analyze(context.Background(), uri, opts); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, ok := snapshot.Update(Document{URI: uri, Text: final, Version: 2})
+	if !ok {
+		t.Fatal("update rejected")
+	}
+	got, err := snapshot.Analyze(context.Background(), uri, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := New(Document{URI: uri, Text: final, Version: 2}).Analyze(
+		context.Background(), uri, opts,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertAnalysisEqual(t, got, want)
+	if got.Reuse.CompatibleExpansion {
+		t.Fatal("macro definition edit reused the previous expansion")
+	}
+}
+
 type staticIncludeResolver map[string]string
 
 func (r staticIncludeResolver) Resolve(_, path string, _ bool) ([]byte, string, bool) {

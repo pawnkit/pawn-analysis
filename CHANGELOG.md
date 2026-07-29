@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.21.0 - 2026-07-29
+
+### Added
+
+- Retain macro invocation ranges in preprocessing results.
+- Benchmark cancellation latency on a generated 50,000-line project.
+
+### Performance
+
+- Stop scanning the expanded token stream when filtering macro-generated
+  declaration diagnostics.
+- Collect state-analysis facts in one syntax pass.
+- Reduced SAFW incremental analysis from about 200-227 ms to 80-126 ms on the
+  reference machine.
+
 ## 0.20.2 - 2026-07-28
 
 ### Added

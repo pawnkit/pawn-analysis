@@ -108,6 +108,7 @@ func nestedInvocationSpan(start, end ptok) token.Span {
 
 func (e *engine) expandObjectAt(f *frame, tok token.Token, m Macro) {
 	inv := invocationSpan(f.fileIndex, tok, tok)
+	e.recordInvocation(inv)
 	body := make([]ptok, len(m.Body))
 	for i, bt := range m.Body {
 		body[i] = wrapOrigin(bt, inv, m.Name)
@@ -144,8 +145,19 @@ func (e *engine) expandFunctionAt(f *frame, tok token.Token, m Macro) {
 			"macro invocation argument count mismatch", spanOf(tok, closeParen))
 	}
 	inv := invocationSpan(f.fileIndex, tok, closeParen)
+	e.recordInvocation(inv)
 	body := substituteParams(m, args, inv)
 	e.expandRun(f, body, hideSet{}.with(m.Name), 1)
+}
+
+func (e *engine) recordInvocation(inv token.Span) {
+	e.invocations = append(e.invocations, MacroInvocation{
+		File: inv.File,
+		Range: ByteRange{
+			Start: inv.Start.Offset,
+			End:   inv.End.Offset,
+		},
+	})
 }
 
 // collectArgs scans comma-separated argument token runs starting right

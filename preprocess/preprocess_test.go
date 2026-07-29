@@ -85,6 +85,21 @@ func TestFunctionMacroExpansion(t *testing.T) {
 	}
 }
 
+func TestMacroInvocationsRetainSourceRanges(t *testing.T) {
+	src := "#define VALUE 1\n#define SQR(%0) ((%0) * (%0))\nnew x = VALUE + SQR(2);\n"
+	result := preprocess.Run([]byte(src), preprocess.Options{})
+	if len(result.MacroInvocations) != 2 {
+		t.Fatalf("invocations = %#v", result.MacroInvocations)
+	}
+	for index, spelling := range []string{"VALUE", "SQR(2)"} {
+		start := strings.LastIndex(src, spelling)
+		got := result.MacroInvocations[index]
+		if got.File != 0 || got.Range.Start != start || got.Range.End != start+len(spelling) {
+			t.Fatalf("invocation %d = %#v", index, got)
+		}
+	}
+}
+
 func TestFunctionMacroArgumentRepetition(t *testing.T) {
 	src := "#define TWICE(%0) %0 %0\nTWICE(zones++;)\n"
 	r := preprocess.Run([]byte(src), preprocess.Options{})

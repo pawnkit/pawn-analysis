@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.24.2 - 2026-07-29
+
+### Added
+
+- Report when incremental analysis rebases syntax after a trivia edit.
+
 ## 0.24.1 - 2026-07-29
 
 ### Performance

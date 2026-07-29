@@ -317,6 +317,9 @@ func TestAnalyzeRebasesOriginalSyntaxForTriviaEdit(t *testing.T) {
 	if reusedSymbols != 0 || after.Symbols == before.Symbols {
 		t.Fatal("shifted original symbols were reused")
 	}
+	if !after.Reuse.RebasedSyntax {
+		t.Fatal("rebased syntax was not reported")
+	}
 	clean := analysis.Analyze(
 		[]byte("#include <shared>\nstock Work() {    return 1; }\nstock Keep() { return 2; }\n"),
 		analysis.Options{Includes: includes, RetainExpanded: true, Revision: "project:1"},

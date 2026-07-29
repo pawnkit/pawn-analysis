@@ -283,6 +283,50 @@ func TestAnalyzeReusesExpandedViewForLocalTokenEdit(t *testing.T) {
 	}
 }
 
+func TestAnalyzeRebasesOriginalSyntaxForTriviaEdit(t *testing.T) {
+	includes := preprocess.MapResolver{
+		"shared": bytes.Repeat([]byte("stock Included() {}\n"), 20),
+	}
+	before := analysis.Analyze(
+		[]byte("#include <shared>\nstock Work() { return 1; }\nstock Keep() { return 2; }\n"),
+		analysis.Options{Includes: includes, RetainExpanded: true, Revision: "project:1"},
+	)
+	var reusedParse, reusedSymbols int
+	after, err := analysis.AnalyzeContext(
+		context.Background(),
+		[]byte("#include <shared>\nstock Work() {    return 1; }\nstock Keep() { return 2; }\n"),
+		analysis.Options{
+			Includes: includes, RetainExpanded: true, Previous: before, Revision: "project:1",
+			ReuseCompatibleExpansion: true,
+			Trace: func(event analysis.TraceEvent) {
+				switch event.Stage {
+				case analysis.StageParseOriginal:
+					reusedParse = event.Reused
+				case analysis.StageSymbolsOriginal:
+					reusedSymbols = event.Reused
+				}
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reusedParse != 1 {
+		t.Fatal("original syntax was rebuilt after a trivia edit")
+	}
+	if reusedSymbols != 0 || after.Symbols == before.Symbols {
+		t.Fatal("shifted original symbols were reused")
+	}
+	clean := analysis.Analyze(
+		[]byte("#include <shared>\nstock Work() {    return 1; }\nstock Keep() { return 2; }\n"),
+		analysis.Options{Includes: includes, RetainExpanded: true, Revision: "project:1"},
+	)
+	if !reflect.DeepEqual(after.Diagnostics, clean.Diagnostics) ||
+		!reflect.DeepEqual(after.Declarations, clean.Declarations) {
+		t.Fatal("rebased analysis differs from clean analysis")
+	}
+}
+
 func TestAnalyzeReusedSyntaxReadsCurrentSource(t *testing.T) {
 	const revision = "project:1"
 	before := analysis.Analyze(

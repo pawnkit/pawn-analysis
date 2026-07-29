@@ -1,12 +1,14 @@
 package query
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"strings"
 	"testing"
 
 	analysis "github.com/pawnkit/pawn-analysis"
+	"github.com/pawnkit/pawn-analysis/preprocess"
 	"github.com/pawnkit/pawnkit-core/source"
 )
 
@@ -182,6 +184,50 @@ func BenchmarkIncrementalTriviaAnalysis(b *testing.B) {
 			b.Fatal("expanded parse was rebuilt")
 		}
 		snapshot, text, previous = next, nextText, result
+	}
+}
+
+func BenchmarkIncrementalShiftedTriviaAnalysis(b *testing.B) {
+	uri := source.FileURI("gamemode.pwn")
+	base := append([]byte("#include <shared>\n"), syntheticGlobalGamemode(1000)...)
+	shifted := bytes.Replace(base, []byte("    new x"), []byte("     new x"), 1)
+	includes := preprocess.MapResolver{"shared": syntheticGlobalGamemode(2500)}
+	opts := analysis.Options{
+		Includes: includes, RetainExpanded: true, Revision: "project:1",
+		ReuseCompatibleExpansion: true,
+	}
+	snapshot := New(Document{URI: uri, Text: base, Version: 1})
+	if _, err := snapshot.Analyze(context.Background(), uri, opts); err != nil {
+		b.Fatal(err)
+	}
+
+	b.ReportAllocs()
+	for version := int64(2); b.Loop(); version++ {
+		b.StopTimer()
+		text := shifted
+		if version%2 != 0 {
+			text = base
+		}
+		next, ok := snapshot.Update(Document{URI: uri, Text: text, Version: version})
+		if !ok {
+			b.Fatal("update rejected")
+		}
+		var reusedParse int
+		runOpts := opts
+		runOpts.Trace = func(event analysis.TraceEvent) {
+			if event.Stage == analysis.StageParseOriginal {
+				reusedParse = event.Reused
+			}
+		}
+		b.StartTimer()
+
+		if _, err := next.Analyze(context.Background(), uri, runOpts); err != nil {
+			b.Fatal(err)
+		}
+		if reusedParse != 1 {
+			b.Fatal("original syntax was rebuilt")
+		}
+		snapshot = next
 	}
 }
 

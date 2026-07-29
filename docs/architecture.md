@@ -46,6 +46,10 @@ the original syntax tree. Function edits that do not touch identifiers also
 reuse the symbol table. Macro calls are indexed during preprocessing so this
 check does not scan the expanded token stream.
 
+Whitespace edits may shift a clean syntax tree when token text and
+parser-significant trivia stay unchanged. Any ambiguous edit falls back to a
+full parse.
+
 The following changes force wider work:
 
 - Macro definitions and conditional directives rebuild preprocessing.

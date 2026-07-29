@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.24.0 - 2026-07-29
+
+### Performance
+
+- Rebase original syntax after grammar-neutral whitespace edits.
+
 ## 0.23.1 - 2026-07-29
 
 ### Performance

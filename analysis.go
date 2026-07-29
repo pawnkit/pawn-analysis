@@ -141,10 +141,19 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 	var expandedTable *symbol.Table
 	reusedExpanded := reusableExpanded(pre, opts.Previous)
 	reusedOriginal := reusableOriginalSyntax(pre, opts.Previous, opts.ReuseCompatibleExpansion)
+	stableOriginalPositions := reusedOriginal
 	if reusedOriginal {
 		current := *opts.Previous.Parse
 		current.Source = text
 		parsed = &current
+	} else if localCandidate && opts.Previous != nil {
+		parsed, reusedOriginal = parser.RebaseCompactTrivia(
+			text,
+			pre.OriginalTokens,
+			opts.Previous.Parse,
+			parser.ByteRange{Start: localEdit.Before.Start, End: localEdit.Before.End},
+			parser.ByteRange{Start: localEdit.After.Start, End: localEdit.After.End},
+		)
 	}
 	if reusedExpanded {
 		expanded = opts.Previous.ExpandedParse
@@ -197,7 +206,7 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		return nil, expandedErr
 	}
 	stage = beginStage(opts.Trace, StageSymbolsOriginal)
-	reusedSymbols := reusableOriginalSymbols(pre, opts.Previous, localEdit, localCandidate, reusedOriginal)
+	reusedSymbols := reusableOriginalSymbols(pre, opts.Previous, localEdit, localCandidate, stableOriginalPositions)
 	if reusedSymbols {
 		table = opts.Previous.Symbols
 		stage.end(ctx, 1)

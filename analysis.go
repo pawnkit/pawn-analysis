@@ -38,6 +38,7 @@ type Options struct {
 type ReuseStats struct {
 	ControlFlow         int
 	Declarations        int
+	Names               int
 	Tags                int
 	CompatibleExpansion bool
 }
@@ -58,6 +59,7 @@ type Result struct {
 	Reuse           ReuseStats
 	baseDiagnostics []diagnostic.Diagnostic
 	flowCache       *sema.FlowCache
+	nameCache       *sema.NameCache
 	tagCache        *sema.TagCache
 	revision        string
 }
@@ -438,9 +440,23 @@ func CompleteContext(ctx context.Context, prepared *Result, opts Options) (*Resu
 		return nil, errors.New("analysis result is incomplete")
 	}
 	resolver := newNameResolver(prepared.Preprocess.Macros, prepared.ExpandedSymbols, opts.Names)
+	var previousNames *sema.NameCache
+	if reusableDeclarations(prepared, opts.Previous) {
+		previousNames = opts.Previous.nameCache
+	}
 	stage := beginStage(opts.Trace, StageSemanticNames)
-	semantics, err := sema.CheckNamesContext(ctx, prepared.Symbols, resolver)
-	stage.end(ctx, 0)
+	var semantics sema.Result
+	var nameCache *sema.NameCache
+	var reusedNames int
+	var err error
+	if opts.ReuseCompatibleExpansion {
+		semantics, nameCache, reusedNames, err = sema.CheckNamesCachedContext(
+			ctx, prepared.Symbols, resolver, previousNames, opts.Revision,
+		)
+	} else {
+		semantics, err = sema.CheckNamesContext(ctx, prepared.Symbols, resolver)
+	}
+	stage.end(ctx, reusedNames)
 	if err != nil {
 		return nil, err
 	}
@@ -497,8 +513,10 @@ func CompleteContext(ctx context.Context, prepared *Result, opts Options) (*Resu
 	result.Semantics = semantics
 	result.ControlFlow = flows
 	result.Reuse.ControlFlow = reused
+	result.Reuse.Names = reusedNames
 	result.Reuse.Tags = reusedTags
 	result.flowCache = flowCache
+	result.nameCache = nameCache
 	result.tagCache = tagCache
 	result.Diagnostics = append(append([]diagnostic.Diagnostic(nil), prepared.baseDiagnostics...), semantics.Diagnostics...)
 	addDiagnosticDocs(result.Diagnostics)

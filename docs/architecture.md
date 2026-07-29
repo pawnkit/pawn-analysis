@@ -40,9 +40,9 @@ file-level fingerprint. Both indexes are lazy.
 
 ## Invalidation
 
-Function-body edits may reuse the include graph, unchanged tag checks, and
-unchanged CFGs. Macro calls are indexed during preprocessing so this check does
-not scan the expanded token stream.
+Function-body edits may reuse the include graph and unchanged name, call-arity,
+tag, and control-flow checks. Macro calls are indexed during preprocessing, so
+this check does not scan the expanded token stream.
 
 The following changes force wider work:
 

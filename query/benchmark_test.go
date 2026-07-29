@@ -114,6 +114,7 @@ func BenchmarkIncrementalFunctionAnalysis(b *testing.B) {
 
 	b.ReportAllocs()
 	b.SetBytes(int64(len(text)))
+	stageTotals := make(map[analysis.Stage]int64)
 	for version := int64(2); b.Loop(); version++ {
 		b.StopTimer()
 		nextText := append([]byte(nil), text...)
@@ -124,7 +125,11 @@ func BenchmarkIncrementalFunctionAnalysis(b *testing.B) {
 		}
 		b.StartTimer()
 
-		result, err := next.Analyze(context.Background(), uri, opts)
+		runOpts := opts
+		runOpts.Trace = func(event analysis.TraceEvent) {
+			stageTotals[event.Stage] += event.Duration.Nanoseconds()
+		}
+		result, err := next.Analyze(context.Background(), uri, runOpts)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -136,6 +141,9 @@ func BenchmarkIncrementalFunctionAnalysis(b *testing.B) {
 		}
 		snapshot = next
 		text = nextText
+	}
+	for stage, total := range stageTotals {
+		b.ReportMetric(float64(total)/float64(b.N), string(stage)+"-ns/op")
 	}
 }
 

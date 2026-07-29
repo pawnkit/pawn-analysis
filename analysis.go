@@ -140,12 +140,22 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 	var expandedErr error
 	var expandedTable *symbol.Table
 	reusedExpanded := reusableExpanded(pre, opts.Previous)
+	reusedOriginal := reusableOriginalSyntax(pre, opts.Previous, opts.ReuseCompatibleExpansion)
+	if reusedOriginal {
+		current := *opts.Previous.Parse
+		current.Source = text
+		parsed = &current
+	}
 	if reusedExpanded {
 		expanded = opts.Previous.ExpandedParse
 		expandedTable = opts.Previous.ExpandedSymbols
 	}
 	parseOriginal := func() {
 		current := beginStage(opts.Trace, StageParseOriginal)
+		if reusedOriginal {
+			current.end(ctx, 1)
+			return
+		}
 		parsed, parsedErr = parser.ParseTokensCompactContext(ctx, text, pre.OriginalTokens, parser.ParseOptions{})
 		current.end(ctx, 0)
 	}
@@ -294,6 +304,38 @@ func reusableExpanded(current *preprocess.Result, previous *Result) bool {
 	}
 	for i := range current.ExpandedTokens {
 		if !sameExpandedToken(current.ExpandedTokens[i], before.ExpandedTokens[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func reusableOriginalSyntax(current *preprocess.Result, previous *Result, enabled bool) bool {
+	if !enabled || current == nil || previous == nil || previous.Parse == nil ||
+		previous.Parse.HasParseErrors() || previous.Preprocess == nil {
+		return false
+	}
+	left, right := current.OriginalTokens, previous.Preprocess.OriginalTokens
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i].Kind != right[i].Kind || left[i].Start != right[i].Start ||
+			left[i].End != right[i].End ||
+			!sameTriviaLayout(left[i].LeadingTrivia, right[i].LeadingTrivia) ||
+			!sameTriviaLayout(left[i].TrailingTrivia, right[i].TrailingTrivia) {
+			return false
+		}
+	}
+	return true
+}
+
+func sameTriviaLayout(left, right []token.Trivia) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
 			return false
 		}
 	}

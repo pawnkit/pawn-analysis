@@ -239,12 +239,18 @@ func TestAnalyzeReusesExpandedViewForLocalTokenEdit(t *testing.T) {
 		[]byte("#include <shared>\nstock Work() { return 1; }\nstock Keep() { return 2; }\n"),
 		analysis.Options{Includes: includes, RetainExpanded: true, Revision: "project:1"},
 	)
+	reusedOriginal := 0
 	after, err := analysis.AnalyzeContext(
 		context.Background(),
 		[]byte("#include <shared>\nstock Work() { return 3; }\nstock Keep() { return 2; }\n"),
 		analysis.Options{
 			Includes: includes, RetainExpanded: true, Previous: before, Revision: "project:1",
 			ReuseCompatibleExpansion: true,
+			Trace: func(event analysis.TraceEvent) {
+				if event.Stage == analysis.StageParseOriginal {
+					reusedOriginal = event.Reused
+				}
+			},
 		},
 	)
 	if err != nil {
@@ -252,6 +258,12 @@ func TestAnalyzeReusesExpandedViewForLocalTokenEdit(t *testing.T) {
 	}
 	if after.ExpandedParse != before.ExpandedParse || after.ExpandedSymbols != before.ExpandedSymbols {
 		t.Fatal("expanded view was rebuilt for a local token edit")
+	}
+	if reusedOriginal != 1 {
+		t.Fatal("original syntax was rebuilt for a layout-compatible edit")
+	}
+	if &after.Parse.Tree.Nodes[0] != &before.Parse.Tree.Nodes[0] {
+		t.Fatal("original syntax storage was not reused")
 	}
 	if after.Reuse.Declarations == 0 {
 		t.Fatal("unchanged declaration was not reused")
@@ -262,6 +274,31 @@ func TestAnalyzeReusesExpandedViewForLocalTokenEdit(t *testing.T) {
 	)
 	if !reflect.DeepEqual(after.Diagnostics, clean.Diagnostics) {
 		t.Fatalf("incremental diagnostics differ:\ngot  %#v\nwant %#v", after.Diagnostics, clean.Diagnostics)
+	}
+}
+
+func TestAnalyzeReusedSyntaxReadsCurrentSource(t *testing.T) {
+	const revision = "project:1"
+	before := analysis.Analyze(
+		[]byte("stock Work() { new old = 1; return old; }\n"),
+		analysis.Options{Revision: revision},
+	)
+	after := analysis.Analyze(
+		[]byte("stock Work() { new now = 1; return now; }\n"),
+		analysis.Options{
+			Previous: before, Revision: revision, ReuseCompatibleExpansion: true,
+		},
+	)
+	var foundNow, foundOld bool
+	for _, item := range after.Symbols.Symbols {
+		foundNow = foundNow || item.Name == "now"
+		foundOld = foundOld || item.Name == "old"
+	}
+	if !foundNow {
+		t.Fatal("reused syntax did not expose the current identifier")
+	}
+	if foundOld {
+		t.Fatal("reused syntax retained the previous identifier")
 	}
 }
 

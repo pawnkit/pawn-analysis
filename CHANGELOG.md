@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.23.0 - 2026-07-29
+
+### Performance
+
+- Reuse original syntax when an editor edit keeps the same token layout.
+
 ## 0.22.1 - 2026-07-29
 
 ### Performance

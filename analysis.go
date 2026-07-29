@@ -91,8 +91,7 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		pre, reusedPreprocess, err = preprocess.ReuseTriviaContext(
 			ctx, text, uri.String(), opts.TokenCache, opts.Previous.Preprocess,
 		)
-		if err == nil && !reusedPreprocess && opts.ReuseCompatibleExpansion &&
-			worthwhileLocalReuse(opts.Previous.Preprocess) {
+		if err == nil && !reusedPreprocess && opts.ReuseCompatibleExpansion {
 			pre, localEdit, localCandidate, err = preprocess.ReuseCompatibleContext(
 				ctx, text, uri.String(), opts.TokenCache, opts.Previous.Preprocess,
 			)
@@ -283,13 +282,6 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		return retainExpanded(prepared, opts.RetainExpanded), nil
 	}
 	return CompleteContext(ctx, prepared, opts)
-}
-
-func worthwhileLocalReuse(previous *preprocess.Result) bool {
-	if previous == nil {
-		return false
-	}
-	return len(previous.ExpandedTokens) > len(previous.OriginalTokens)*2
 }
 
 func reusableExpanded(current *preprocess.Result, previous *Result) bool {

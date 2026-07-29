@@ -46,6 +46,10 @@ the original syntax tree. Function edits that do not touch identifiers also
 reuse the symbol table. Macro calls are indexed during preprocessing so this
 check does not scan the expanded token stream.
 
+Compatible body edits reuse preprocessing even when the expanded source is
+small. The same invalidation checks apply to single-file and include-heavy
+projects.
+
 Whitespace edits may shift a clean syntax tree when token text and
 parser-significant trivia stay unchanged. Any ambiguous edit falls back to a
 full parse.

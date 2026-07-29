@@ -45,22 +45,26 @@ type ReuseStats struct {
 
 // Result is one immutable file analysis.
 type Result struct {
-	File            source.FileID
-	Registry        *source.Registry
-	Preprocess      *preprocess.Result
-	Parse           *parser.CompactFile
-	ExpandedParse   *parser.CompactFile
-	Declarations    parser.DeclarationIndex
-	Symbols         *symbol.Table
-	ExpandedSymbols *symbol.Table
-	Semantics       sema.Result
-	ControlFlow     []sema.FunctionFlow
-	Diagnostics     []diagnostic.Diagnostic
-	Reuse           ReuseStats
-	baseDiagnostics []diagnostic.Diagnostic
-	flowCache       *sema.FlowCache
-	tagCache        *sema.TagCache
-	revision        string
+	File                source.FileID
+	Registry            *source.Registry
+	Preprocess          *preprocess.Result
+	Parse               *parser.CompactFile
+	ExpandedParse       *parser.CompactFile
+	Declarations        parser.DeclarationIndex
+	Symbols             *symbol.Table
+	ExpandedSymbols     *symbol.Table
+	Semantics           sema.Result
+	ControlFlow         []sema.FunctionFlow
+	Diagnostics         []diagnostic.Diagnostic
+	Reuse               ReuseStats
+	baseDiagnostics     []diagnostic.Diagnostic
+	flowCache           *sema.FlowCache
+	tagCache            *sema.TagCache
+	nameResult          sema.Result
+	stateDiagnostics    []diagnostic.Diagnostic
+	orderDiagnostics    []diagnostic.Diagnostic
+	reuseLocalSemantics bool
+	revision            string
 }
 
 // Analyze runs the shared per-file pipeline.
@@ -280,6 +284,8 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		File: fileID, Registry: registry, Preprocess: pre, Parse: parsed, ExpandedParse: expanded,
 		Declarations: declarations, Symbols: table, ExpandedSymbols: expandedTable,
 		Diagnostics: diagnostics, baseDiagnostics: diagnostics,
+		reuseLocalSemantics: localCandidate && stableOriginalPositions && opts.Previous != nil &&
+			table == opts.Previous.Symbols,
 		revision: opts.Revision,
 	}
 	prepared.Reuse.Declarations = reusedDeclarationCount
@@ -574,10 +580,23 @@ func CompleteContext(ctx context.Context, prepared *Result, opts Options) (*Resu
 	}
 	resolver := newNameResolver(prepared.Preprocess.Macros, prepared.ExpandedSymbols, opts.Names)
 	stage := beginStage(opts.Trace, StageSemanticNames)
-	semantics, err := sema.CheckNamesContext(ctx, prepared.Symbols, resolver)
-	stage.end(ctx, 0)
-	if err != nil {
-		return nil, err
+	semantics := sema.Result{}
+	if prepared.reuseLocalSemantics {
+		semantics = opts.Previous.nameResult
+		semantics.Diagnostics = append([]diagnostic.Diagnostic(nil), semantics.Diagnostics...)
+		semantics.Unknown = append([]symbol.Reference(nil), semantics.Unknown...)
+		stage.end(ctx, 1)
+	} else {
+		var err error
+		semantics, err = sema.CheckNamesContext(ctx, prepared.Symbols, resolver)
+		stage.end(ctx, 0)
+		if err != nil {
+			return nil, err
+		}
+	}
+	nameResult := sema.Result{
+		Diagnostics: append([]diagnostic.Diagnostic(nil), semantics.Diagnostics...),
+		Unknown:     append([]symbol.Reference(nil), semantics.Unknown...),
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -587,9 +606,9 @@ func CompleteContext(ctx context.Context, prepared *Result, opts Options) (*Resu
 		previousTags = opts.Previous.tagCache
 	}
 	stage = beginStage(opts.Trace, StageSemanticTags)
-	tagDiagnostics, tagCache, reusedTags, err := sema.CheckTagsCachedContext(
+	tagDiagnostics, tagCache, reusedTags, err := sema.CheckTagsCachedIndexedContext(
 		ctx,
-		prepared.Parse.Syntax(), prepared.Symbols, resolver, previousTags, opts.Revision,
+		prepared.Parse.Syntax(), prepared.Symbols, resolver, previousTags, opts.Revision, prepared.Declarations,
 	)
 	stage.end(ctx, reusedTags)
 	if err != nil {
@@ -600,17 +619,29 @@ func CompleteContext(ctx context.Context, prepared *Result, opts Options) (*Resu
 	}
 	semantics.Diagnostics = append(semantics.Diagnostics, tagDiagnostics...)
 	stage = beginStage(opts.Trace, StageSemanticStates)
-	stateDiagnostics, err := sema.CheckStatesContext(ctx, prepared.Parse.Syntax(), prepared.File)
-	stage.end(ctx, 0)
-	if err != nil {
-		return nil, err
+	var stateDiagnostics []diagnostic.Diagnostic
+	if prepared.reuseLocalSemantics {
+		stateDiagnostics = opts.Previous.stateDiagnostics
+		stage.end(ctx, 1)
+	} else {
+		stateDiagnostics, err = sema.CheckStatesContext(ctx, prepared.Parse.Syntax(), prepared.File)
+		stage.end(ctx, 0)
+		if err != nil {
+			return nil, err
+		}
 	}
 	semantics.Diagnostics = append(semantics.Diagnostics, stateDiagnostics...)
 	stage = beginStage(opts.Trace, StageSemanticOrder)
-	orderDiagnostics, err := sema.CheckConstantOrderContext(ctx, prepared.Parse.Syntax(), prepared.Symbols)
-	stage.end(ctx, 0)
-	if err != nil {
-		return nil, err
+	var orderDiagnostics []diagnostic.Diagnostic
+	if prepared.reuseLocalSemantics {
+		orderDiagnostics = opts.Previous.orderDiagnostics
+		stage.end(ctx, 1)
+	} else {
+		orderDiagnostics, err = sema.CheckConstantOrderContext(ctx, prepared.Parse.Syntax(), prepared.Symbols)
+		stage.end(ctx, 0)
+		if err != nil {
+			return nil, err
+		}
 	}
 	semantics.Diagnostics = append(semantics.Diagnostics, orderDiagnostics...)
 	var previousFlow *sema.FlowCache
@@ -635,6 +666,9 @@ func CompleteContext(ctx context.Context, prepared *Result, opts Options) (*Resu
 	result.Reuse.Tags = reusedTags
 	result.flowCache = flowCache
 	result.tagCache = tagCache
+	result.nameResult = nameResult
+	result.stateDiagnostics = stateDiagnostics
+	result.orderDiagnostics = orderDiagnostics
 	result.Diagnostics = append(append([]diagnostic.Diagnostic(nil), prepared.baseDiagnostics...), semantics.Diagnostics...)
 	addDiagnosticDocs(result.Diagnostics)
 	return retainExpanded(&result, opts.RetainExpanded), nil

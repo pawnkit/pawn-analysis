@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.26.0 - 2026-07-29
+
+### Added
+
+- Let cached tag checks consume parser declaration fingerprints.
+
+### Performance
+
+- Reuse name, state, and constant-order results for fixed-position local edits.
+
 ## 0.25.0 - 2026-07-29
 
 ### Added

@@ -240,6 +240,7 @@ func TestAnalyzeReusesExpandedViewForLocalTokenEdit(t *testing.T) {
 		analysis.Options{Includes: includes, RetainExpanded: true, Revision: "project:1"},
 	)
 	var reusedOriginal, reusedSymbols int
+	reusedSemantics := make(map[analysis.Stage]int)
 	after, err := analysis.AnalyzeContext(
 		context.Background(),
 		[]byte("#include <shared>\nstock Work() { return 3; }\nstock Keep() { return 2; }\n"),
@@ -252,6 +253,10 @@ func TestAnalyzeReusesExpandedViewForLocalTokenEdit(t *testing.T) {
 				}
 				if event.Stage == analysis.StageSymbolsOriginal {
 					reusedSymbols = event.Reused
+				}
+				switch event.Stage {
+				case analysis.StageSemanticNames, analysis.StageSemanticStates, analysis.StageSemanticOrder:
+					reusedSemantics[event.Stage] = event.Reused
 				}
 			},
 		},
@@ -270,6 +275,15 @@ func TestAnalyzeReusesExpandedViewForLocalTokenEdit(t *testing.T) {
 	}
 	if reusedSymbols != 1 || after.Symbols != before.Symbols {
 		t.Fatal("unchanged original symbols were rebuilt")
+	}
+	for _, stage := range []analysis.Stage{
+		analysis.StageSemanticNames,
+		analysis.StageSemanticStates,
+		analysis.StageSemanticOrder,
+	} {
+		if reusedSemantics[stage] != 1 {
+			t.Fatalf("%s was rebuilt", stage)
+		}
 	}
 	if after.Reuse.Declarations == 0 {
 		t.Fatal("unchanged declaration was not reused")

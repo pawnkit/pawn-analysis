@@ -43,7 +43,7 @@ func CheckTagsCached(
 	revision string,
 ) ([]diagnostic.Diagnostic, *TagCache, int) {
 	diagnostics, cache, reused, _ := checkTagsCached(
-		context.Background(), false, root, table, resolver, previous, revision,
+		context.Background(), false, root, table, resolver, previous, revision, parser.DeclarationIndex{},
 	)
 	return diagnostics, cache, reused
 }
@@ -57,7 +57,20 @@ func CheckTagsCachedContext(
 	previous *TagCache,
 	revision string,
 ) ([]diagnostic.Diagnostic, *TagCache, int, error) {
-	return checkTagsCached(ctx, true, root, table, resolver, previous, revision)
+	return checkTagsCached(ctx, true, root, table, resolver, previous, revision, parser.DeclarationIndex{})
+}
+
+// CheckTagsCachedIndexedContext reuses declaration fingerprints from parsing.
+func CheckTagsCachedIndexedContext(
+	ctx context.Context,
+	root parser.SyntaxNode,
+	table *symbol.Table,
+	resolver Resolver,
+	previous *TagCache,
+	revision string,
+	declarations parser.DeclarationIndex,
+) ([]diagnostic.Diagnostic, *TagCache, int, error) {
+	return checkTagsCached(ctx, true, root, table, resolver, previous, revision, declarations)
 }
 
 func checkTagsCached(
@@ -68,6 +81,7 @@ func checkTagsCached(
 	resolver Resolver,
 	previous *TagCache,
 	revision string,
+	declarations parser.DeclarationIndex,
 ) ([]diagnostic.Diagnostic, *TagCache, int, error) {
 	cancel := cancellation{ctx: ctx, cancellable: cancellable}
 	if cancellable {
@@ -99,12 +113,15 @@ func checkTagsCached(
 	canReuse := previous != nil && previous.exports == exports && previous.revision == revisionHash
 	checker := tagChecker{table: table, resolver: resolver, cancel: &cancel}
 	reused := 0
-	declarations := root.Declarations()
-	for declarations.Next() {
+	nodes := root.Declarations()
+	position := 0
+	for nodes.Next() {
 		if cancel.poll() {
 			return nil, nil, 0, cancel.err
 		}
-		declaration := declarations.Declaration()
+		declaration := nodes.Declaration()
+		boundary, indexed := declarations.At(position)
+		position++
 		if declaration.Kind() != parser.KindFunctionDefinition {
 			checker.walk(declaration, "")
 			continue
@@ -123,7 +140,11 @@ func checkTagsCached(
 		cacheable := stable && len(declaration.Bytes()) >= tagCacheMinimumBytes
 		var bodyHash [32]byte
 		if cacheable {
-			bodyHash = sha256.Sum256(declaration.Bytes())
+			if indexed && boundary.Kind == declaration.Kind() && boundary.Range == declaration.Range() {
+				bodyHash = boundary.Fingerprint
+			} else {
+				bodyHash = sha256.Sum256(declaration.Bytes())
+			}
 		}
 		if canReuse && cacheable {
 			if cached, found := previous.entries[stableID]; found && cached.body == bodyHash {

@@ -537,9 +537,18 @@ func (b *builder) walkParameter(scope ID, p parser.SyntaxNode) {
 		return
 	}
 	_, isArray := p.Field("array")
+	isConst := false
+	children := p.Children()
+	for children.Next() {
+		child := children.Node()
+		if child.Kind() == parser.KindIdentifier && child.Token().Kind() == token.KwConst {
+			isConst = true
+			break
+		}
+	}
 	sym := Symbol{
 		Name: nameNode.Text(), Kind: KindParameter, Tag: extractTag(p),
-		IsArray: isArray, Span: b.spanOf(nameNode),
+		IsArray: isArray, IsConst: isConst, Span: b.spanOf(nameNode),
 	}
 	b.declare(scope, sym)
 	if def, ok := p.Field("default_value"); ok {

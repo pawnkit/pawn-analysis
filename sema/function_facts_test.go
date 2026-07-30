@@ -100,6 +100,31 @@ stock WriteGlobal() { Forward(shared); }
 	}
 }
 
+func TestBuildFunctionFactsIncludesCallableDeclarations(t *testing.T) {
+	t.Parallel()
+
+	text := []byte(`
+native External(input, output[], const stable[]);
+stock Forward(input, output[], const stable[]) {
+    External(input, output, stable);
+}
+`)
+	file := parser.ParseCompact(text, parser.ParseOptions{})
+	table := symbol.Build(file.Syntax(), source.FileID(1))
+	facts := sema.ResolveFunctionFacts(sema.BuildFunctionFacts(file, table), table)
+
+	external := facts[symbolByName(t, table, "External").ID]
+	if !external.Complete || !external.IntrinsicImpure ||
+		!reflect.DeepEqual(external.MutatedParameters, []int{1}) {
+		t.Fatalf("External facts = %#v", external)
+	}
+	forward := facts[symbolByName(t, table, "Forward").ID]
+	if !forward.Complete || !forward.IntrinsicImpure ||
+		!reflect.DeepEqual(forward.MutatedParameters, []int{1}) {
+		t.Fatalf("Forward facts = %#v", forward)
+	}
+}
+
 type callEffectResolver map[string]sema.CallEffects
 
 func (r callEffectResolver) ResolveCallEffects(name string) (sema.CallEffects, bool) {

@@ -89,7 +89,8 @@ func buildFunctionFacts(
 	declarations := file.Syntax().Declarations()
 	for declarations.Next() {
 		function := declarations.Declaration()
-		if function.Kind() != parser.KindFunctionDefinition {
+		if function.Kind() != parser.KindFunctionDefinition &&
+			function.Kind() != parser.KindFunctionDeclaration {
 			continue
 		}
 		name, ok := function.Field("name")
@@ -104,9 +105,19 @@ func buildFunctionFacts(
 		if !ok || !declared.Kind.IsCallable() {
 			continue
 		}
-		result[declared.ID] = collectFunctionFacts(
-			function, declared, table, references, spanOf, hasReferenceMark,
-		)
+		if function.Kind() == parser.KindFunctionDeclaration {
+			parameters := functionParameters(function, table, spanOf, hasReferenceMark)
+			ids, mutable := orderedParameters(parameters)
+			result[declared.ID] = FunctionFacts{
+				Complete: true, IntrinsicImpure: true,
+				Parameters: ids, ReferenceParameters: mutable,
+				MutatedParameters: mutableIndexes(mutable),
+			}
+		} else {
+			result[declared.ID] = collectFunctionFacts(
+				function, declared, table, references, spanOf, hasReferenceMark,
+			)
+		}
 	}
 	return result
 }
@@ -392,7 +403,9 @@ func functionParameters(
 			nameSpan, mapped := spanOf(name)
 			if declared, found := table.DeclarationAt(nameSpan); mapped && found {
 				result[declared.ID] = parameterFact{
-					index: index, mutable: declared.IsArray || hasReferenceMark(parameter.Range()),
+					index: index,
+					mutable: hasReferenceMark(parameter.Range()) ||
+						declared.IsArray && !declared.IsConst,
 				}
 			}
 		}
@@ -413,6 +426,16 @@ func orderedParameters(parameters map[symbol.ID]parameterFact) ([]symbol.ID, []b
 		references[parameter.index] = parameter.mutable
 	}
 	return ids, references
+}
+
+func mutableIndexes(parameters []bool) []int {
+	var result []int
+	for index, mutable := range parameters {
+		if mutable {
+			result = append(result, index)
+		}
+	}
+	return result
 }
 
 func applyReferenceFacts(

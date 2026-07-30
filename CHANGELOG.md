@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.30.1 - 2026-07-30
+
+### Fixed
+
+- Include native and forward declarations in function effects.
+- Preserve `const` on parameter symbols.
+
 ## 0.30.0 - 2026-07-30
 
 ### Added

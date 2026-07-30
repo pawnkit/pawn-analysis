@@ -313,12 +313,16 @@ func TestOperatorOverloadsAndTagUnion(t *testing.T) {
 }
 
 func TestArrayParameterAndVariable(t *testing.T) {
-	src := "stock Use(arr[10]) { new buf[32]; return arr[0] + buf[0]; }\n"
+	src := "stock Use(arr[10], const stable[]) { new buf[32]; return arr[0] + stable[0] + buf[0]; }\n"
 	table, _ := buildTable(t, src)
 
 	p, ok := findSymbol(table, "arr")
 	if !ok || !p.IsArray {
 		t.Fatalf("expected 'arr' parameter marked as array, got %+v ok=%v", p, ok)
+	}
+	stable, ok := findSymbol(table, "stable")
+	if !ok || !stable.IsArray || !stable.IsConst {
+		t.Fatalf("expected 'stable' parameter marked const array, got %+v ok=%v", stable, ok)
 	}
 	v, ok := findSymbol(table, "buf")
 	if !ok || !v.IsArray {

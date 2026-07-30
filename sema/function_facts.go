@@ -359,8 +359,12 @@ func functionParameters(
 }
 
 func orderedParameters(parameters map[symbol.ID]parameterFact) ([]symbol.ID, []bool) {
-	ids := make([]symbol.ID, len(parameters))
-	references := make([]bool, len(parameters))
+	size := 0
+	for _, parameter := range parameters {
+		size = max(size, parameter.index+1)
+	}
+	ids := make([]symbol.ID, size)
+	references := make([]bool, size)
 	for id, parameter := range parameters {
 		ids[parameter.index] = id
 		references[parameter.index] = parameter.mutable

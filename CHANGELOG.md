@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.29.1 - 2026-07-30
+
+### Fixed
+
+- Preserve sparse parameter indexes in mapped function facts.
+
 ## 0.29.0 - 2026-07-30
 
 ### Added

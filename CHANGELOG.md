@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.29.0 - 2026-07-30
+
+### Added
+
+- Propagate function effects through calls and included files.
+
 ## 0.28.0 - 2026-07-30
 
 ### Added

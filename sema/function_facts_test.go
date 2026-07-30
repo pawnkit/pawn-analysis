@@ -67,6 +67,31 @@ func TestBuildFunctionFactsMarksUnknownCallsIncomplete(t *testing.T) {
 	}
 }
 
+func TestResolveFunctionFactsPropagatesCalls(t *testing.T) {
+	t.Parallel()
+
+	text := []byte(`
+new shared;
+stock Mutate(&value) { value = 1; shared = 2; }
+stock Forward(&value) { Mutate(value); }
+stock WriteGlobal() { Forward(shared); }
+`)
+	file := parser.ParseCompact(text, parser.ParseOptions{})
+	table := symbol.Build(file.Syntax(), source.FileID(1))
+	facts := sema.ResolveFunctionFacts(sema.BuildFunctionFacts(file, table), table)
+
+	forward := facts[symbolByName(t, table, "Forward").ID]
+	if !forward.Complete || !reflect.DeepEqual(forward.MutatedParameters, []int{0}) ||
+		len(forward.WritesGlobals) != 1 {
+		t.Fatalf("Forward facts = %#v", forward)
+	}
+	writeGlobal := facts[symbolByName(t, table, "WriteGlobal").ID]
+	if !writeGlobal.Complete || len(writeGlobal.MutatedParameters) != 0 ||
+		len(writeGlobal.WritesGlobals) != 1 {
+		t.Fatalf("WriteGlobal facts = %#v", writeGlobal)
+	}
+}
+
 func symbolByName(t *testing.T, table *symbol.Table, name string) symbol.Symbol {
 	t.Helper()
 	for _, item := range table.Symbols {

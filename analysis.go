@@ -254,12 +254,14 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		if reusedExpanded {
 			stage.end(ctx, 1)
 		} else {
-			expandedTable, err = symbol.BuildMappedNavigationWithSpansContext(
-				ctx,
-				expanded.Syntax(),
-				fileID,
-				expandedSpanMapper(pre.ExpandedTokens, mapFile),
-			)
+			mapSpan := expandedSpanMapper(pre.ExpandedTokens, mapFile)
+			if opts.CollectFunctionFacts {
+				expandedTable, err = symbol.BuildMappedWithSpansContext(ctx, expanded.Syntax(), fileID, mapSpan)
+			} else {
+				expandedTable, err = symbol.BuildMappedNavigationWithSpansContext(
+					ctx, expanded.Syntax(), fileID, mapSpan,
+				)
+			}
 			if err != nil {
 				stage.end(ctx, 0)
 				return nil, err
@@ -711,7 +713,28 @@ func CompleteContext(ctx context.Context, prepared *Result, opts Options) (*Resu
 	result.stateDiagnostics = stateDiagnostics
 	result.orderDiagnostics = orderDiagnostics
 	if opts.CollectFunctionFacts {
-		result.FunctionFacts = sema.BuildFunctionFacts(result.Parse, result.Symbols)
+		factsFile, factsTable := result.Parse, result.Symbols
+		var direct map[symbol.ID]sema.FunctionFacts
+		if result.ExpandedParse != nil && result.ExpandedSymbols != nil {
+			factsFile, factsTable = result.ExpandedParse, result.ExpandedSymbols
+			direct = sema.BuildMappedFunctionFacts(
+				factsFile,
+				factsTable,
+				result.Preprocess.ExpandedTokens,
+				expandedSpanMapper(result.Preprocess.ExpandedTokens, func(index uint32) source.FileID {
+					if int(index) < len(result.Preprocess.Files) {
+						uri := source.URI(result.Preprocess.Files[index].URI)
+						if id, ok := result.Registry.Lookup(uri); ok {
+							return id
+						}
+					}
+					return result.File
+				}),
+			)
+		} else {
+			direct = sema.BuildFunctionFacts(factsFile, factsTable)
+		}
+		result.FunctionFacts = sema.ResolveFunctionFacts(direct, factsTable)
 	}
 	result.Diagnostics = append(append([]diagnostic.Diagnostic(nil), prepared.baseDiagnostics...), semantics.Diagnostics...)
 	addDiagnosticDocs(result.Diagnostics)

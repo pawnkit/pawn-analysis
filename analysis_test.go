@@ -391,6 +391,31 @@ func TestAnalyzeCollectsFunctionFactsOnRequest(t *testing.T) {
 	}
 }
 
+func TestAnalyzeCollectsFunctionFactsAcrossIncludes(t *testing.T) {
+	includes := preprocess.MapResolver{
+		"shared": []byte("stock Mutate(&value) { value = 1; }\n"),
+	}
+	result := analysis.Analyze(
+		[]byte("#include <shared>\nstock Forward(&value) { Mutate(value); }\n"),
+		analysis.Options{
+			URI: source.FileURI("main.pwn"), Includes: includes, RetainExpanded: true,
+			CollectFunctionFacts: true,
+		},
+	)
+	var forward symbol.ID
+	for _, item := range result.ExpandedSymbols.Symbols {
+		if item.Name == "Forward" {
+			forward = item.ID
+			break
+		}
+	}
+	facts, ok := result.FunctionFacts[forward]
+	if forward == 0 || !ok || !facts.Complete ||
+		!reflect.DeepEqual(facts.MutatedParameters, []int{0}) {
+		t.Fatalf("included function facts = %#v, found = %v", facts, ok)
+	}
+}
+
 func TestAnalyzeReusedSyntaxReadsCurrentSource(t *testing.T) {
 	const revision = "project:1"
 	before := analysis.Analyze(

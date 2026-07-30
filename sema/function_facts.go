@@ -11,16 +11,60 @@ import (
 
 // FunctionFacts describes effects visible within one function body.
 type FunctionFacts struct {
-	Complete          bool
-	IntrinsicImpure   bool
-	ReadsGlobals      []symbol.ID
-	WritesGlobals     []symbol.ID
-	MutatedParameters []int
-	Calls             []symbol.ID
+	Complete            bool
+	IntrinsicImpure     bool
+	ReadsGlobals        []symbol.ID
+	WritesGlobals       []symbol.ID
+	MutatedParameters   []int
+	Calls               []symbol.ID
+	CallSites           []FunctionCall
+	Parameters          []symbol.ID
+	ReferenceParameters []bool
+}
+
+// FunctionCall records resolved arguments for one call.
+type FunctionCall struct {
+	Function  symbol.ID
+	Arguments []symbol.ID
 }
 
 // BuildFunctionFacts collects direct effects without following calls.
 func BuildFunctionFacts(file *parser.CompactFile, table *symbol.Table) map[symbol.ID]FunctionFacts {
+	return buildFunctionFacts(
+		file,
+		table,
+		func(node parser.SyntaxNode) (source.Span, bool) {
+			return node.Range().Span(table.File), true
+		},
+		func(within parser.ByteRange) bool {
+			return compactRangeHasToken(file.Tokens, within, token.Amp)
+		},
+	)
+}
+
+// BuildMappedFunctionFacts collects effects from expanded syntax.
+func BuildMappedFunctionFacts(
+	file *parser.CompactFile,
+	table *symbol.Table,
+	tokens []token.Token,
+	mapSpan func(parser.SyntaxNode) (source.Span, bool),
+) map[symbol.ID]FunctionFacts {
+	return buildFunctionFacts(
+		file,
+		table,
+		mapSpan,
+		func(within parser.ByteRange) bool {
+			return tokenRangeHasToken(tokens, within, token.Amp)
+		},
+	)
+}
+
+func buildFunctionFacts(
+	file *parser.CompactFile,
+	table *symbol.Table,
+	spanOf func(parser.SyntaxNode) (source.Span, bool),
+	hasReferenceMark func(parser.ByteRange) bool,
+) map[symbol.ID]FunctionFacts {
 	if file == nil || table == nil {
 		return nil
 	}
@@ -39,24 +83,134 @@ func BuildFunctionFacts(file *parser.CompactFile, table *symbol.Table) map[symbo
 		if !ok {
 			continue
 		}
-		declared, ok := table.DeclarationAt(name.Range().Span(table.File))
+		nameSpan, mapped := spanOf(name)
+		if !mapped {
+			continue
+		}
+		declared, ok := table.DeclarationAt(nameSpan)
 		if !ok || !declared.Kind.IsCallable() {
 			continue
 		}
-		result[declared.ID] = collectFunctionFacts(file, function, declared, table, references)
+		result[declared.ID] = collectFunctionFacts(
+			function, declared, table, references, spanOf, hasReferenceMark,
+		)
 	}
 	return result
 }
 
+// ResolveFunctionFacts propagates effects through resolved calls.
+func ResolveFunctionFacts(
+	direct map[symbol.ID]FunctionFacts,
+	table *symbol.Table,
+) map[symbol.ID]FunctionFacts {
+	if len(direct) == 0 || table == nil {
+		return direct
+	}
+	result := make(map[symbol.ID]FunctionFacts, len(direct))
+	for id, facts := range direct {
+		result[id] = cloneFunctionFacts(facts)
+	}
+	for changed := true; changed; {
+		changed = false
+		for id, current := range result {
+			reads := idSet(current.ReadsGlobals)
+			writes := idSet(current.WritesGlobals)
+			mutated := indexSet(current.MutatedParameters)
+			complete := current.Complete
+			impure := current.IntrinsicImpure
+			for _, call := range current.CallSites {
+				callee, ok := result[call.Function]
+				if !ok || !callee.Complete {
+					complete = false
+					continue
+				}
+				impure = impure || callee.IntrinsicImpure
+				addIDs(reads, callee.ReadsGlobals)
+				addIDs(writes, callee.WritesGlobals)
+				if !propagateMutations(call, callee, current, table, writes, mutated) {
+					complete = false
+				}
+			}
+			nextReads, nextWrites := sortedIDs(reads), sortedIDs(writes)
+			nextMutated := sortedIndexes(mutated)
+			if complete != current.Complete || impure != current.IntrinsicImpure ||
+				!equalIDs(nextReads, current.ReadsGlobals) ||
+				!equalIDs(nextWrites, current.WritesGlobals) ||
+				!equalIndexes(nextMutated, current.MutatedParameters) {
+				current.Complete = complete
+				current.IntrinsicImpure = impure
+				current.ReadsGlobals = nextReads
+				current.WritesGlobals = nextWrites
+				current.MutatedParameters = nextMutated
+				result[id] = current
+				changed = true
+			}
+		}
+	}
+	return result
+}
+
+func propagateMutations(
+	call FunctionCall,
+	callee, caller FunctionFacts,
+	table *symbol.Table,
+	writes map[symbol.ID]struct{},
+	mutated map[int]struct{},
+) bool {
+	complete := true
+	callerParameters := make(map[symbol.ID]int, len(caller.Parameters))
+	for index, id := range caller.Parameters {
+		if index < len(caller.ReferenceParameters) && caller.ReferenceParameters[index] {
+			callerParameters[id] = index
+		}
+	}
+	for _, index := range callee.MutatedParameters {
+		if index < 0 || index >= len(call.Arguments) || call.Arguments[index] == 0 {
+			complete = false
+			continue
+		}
+		id := call.Arguments[index]
+		if parameter, ok := callerParameters[id]; ok {
+			mutated[parameter] = struct{}{}
+			continue
+		}
+		item, ok := table.Symbol(id)
+		if !ok {
+			complete = false
+			continue
+		}
+		scope, ok := table.Scope(item.Scope)
+		if ok && scope.Kind == symbol.ScopeFile && !item.Kind.IsCallable() {
+			writes[id] = struct{}{}
+		}
+	}
+	return complete
+}
+
+func cloneFunctionFacts(facts FunctionFacts) FunctionFacts {
+	facts.ReadsGlobals = append([]symbol.ID(nil), facts.ReadsGlobals...)
+	facts.WritesGlobals = append([]symbol.ID(nil), facts.WritesGlobals...)
+	facts.MutatedParameters = append([]int(nil), facts.MutatedParameters...)
+	facts.Calls = append([]symbol.ID(nil), facts.Calls...)
+	facts.Parameters = append([]symbol.ID(nil), facts.Parameters...)
+	facts.ReferenceParameters = append([]bool(nil), facts.ReferenceParameters...)
+	facts.CallSites = append([]FunctionCall(nil), facts.CallSites...)
+	for index := range facts.CallSites {
+		facts.CallSites[index].Arguments = append([]symbol.ID(nil), facts.CallSites[index].Arguments...)
+	}
+	return facts
+}
+
 func collectFunctionFacts(
-	file *parser.CompactFile,
 	function parser.SyntaxNode,
 	declared symbol.Symbol,
 	table *symbol.Table,
 	references map[source.Span]symbol.Reference,
+	spanOf func(parser.SyntaxNode) (source.Span, bool),
+	hasReferenceMark func(parser.ByteRange) bool,
 ) FunctionFacts {
 	facts := FunctionFacts{Complete: !function.HasError()}
-	parameters := functionParameters(function, file.Tokens, table)
+	parameters := functionParameters(function, table, spanOf, hasReferenceMark)
 	reads := make(map[symbol.ID]struct{})
 	writes := make(map[symbol.ID]struct{})
 	mutated := make(map[int]struct{})
@@ -79,9 +233,14 @@ func collectFunctionFacts(
 				facts.Complete = false
 				return
 			}
+		case parser.KindCallExpression:
+			if call, ok := functionCall(node, table, references, spanOf); ok {
+				facts.CallSites = append(facts.CallSites, call)
+			}
 		case parser.KindIdentifier:
-			reference, ok := references[node.Range().Span(table.File)]
-			if ok {
+			span, mapped := spanOf(node)
+			reference, ok := references[span]
+			if mapped && ok {
 				applyReferenceFacts(&facts, reference, accessFor(node, parents), table, parameters, reads, writes, mutated, calls)
 			}
 		}
@@ -96,6 +255,7 @@ func collectFunctionFacts(
 	facts.WritesGlobals = sortedIDs(writes)
 	facts.MutatedParameters = sortedIndexes(mutated)
 	facts.Calls = sortedIDs(calls)
+	facts.Parameters, facts.ReferenceParameters = orderedParameters(parameters)
 	return facts
 }
 
@@ -104,10 +264,73 @@ type parameterFact struct {
 	mutable bool
 }
 
+func functionCall(
+	call parser.SyntaxNode,
+	table *symbol.Table,
+	references map[source.Span]symbol.Reference,
+	spanOf func(parser.SyntaxNode) (source.Span, bool),
+) (FunctionCall, bool) {
+	callee, ok := call.Field("function")
+	if !ok || callee.Kind() != parser.KindIdentifier {
+		return FunctionCall{}, false
+	}
+	calleeSpan, mapped := spanOf(callee)
+	reference, ok := references[calleeSpan]
+	if !mapped || !ok || reference.Resolved == 0 {
+		return FunctionCall{}, false
+	}
+	result := FunctionCall{Function: reference.Resolved}
+	arguments, ok := call.Field("arguments")
+	if !ok {
+		return result, true
+	}
+	items := arguments.Children()
+	for items.Next() {
+		identifier, found := baseIdentifier(items.Node())
+		if !found {
+			result.Arguments = append(result.Arguments, 0)
+			continue
+		}
+		argumentSpan, mapped := spanOf(identifier)
+		argument, found := references[argumentSpan]
+		if !mapped || !found {
+			result.Arguments = append(result.Arguments, 0)
+		} else {
+			result.Arguments = append(result.Arguments, argument.Resolved)
+		}
+	}
+	return result, true
+}
+
+func baseIdentifier(node parser.SyntaxNode) (parser.SyntaxNode, bool) {
+	for node.Valid() {
+		switch node.Kind() {
+		case parser.KindIdentifier:
+			return node, true
+		case parser.KindParenthesizedExpression, parser.KindTaggedExpression:
+			next, ok := node.Field("expression")
+			if !ok {
+				return parser.SyntaxNode{}, false
+			}
+			node = next
+		case parser.KindSubscriptExpression:
+			next, ok := node.Field("array")
+			if !ok {
+				return parser.SyntaxNode{}, false
+			}
+			node = next
+		default:
+			return parser.SyntaxNode{}, false
+		}
+	}
+	return parser.SyntaxNode{}, false
+}
+
 func functionParameters(
 	function parser.SyntaxNode,
-	tokens []parser.CompactToken,
 	table *symbol.Table,
+	spanOf func(parser.SyntaxNode) (source.Span, bool),
+	hasReferenceMark func(parser.ByteRange) bool,
 ) map[symbol.ID]parameterFact {
 	result := make(map[symbol.ID]parameterFact)
 	list, ok := function.Field("parameters")
@@ -123,15 +346,26 @@ func functionParameters(
 		}
 		name, ok := parameter.Field("name")
 		if ok {
-			if declared, found := table.DeclarationAt(name.Range().Span(table.File)); found {
+			nameSpan, mapped := spanOf(name)
+			if declared, found := table.DeclarationAt(nameSpan); mapped && found {
 				result[declared.ID] = parameterFact{
-					index: index, mutable: declared.IsArray || rangeHasToken(tokens, parameter.Range(), token.Amp),
+					index: index, mutable: declared.IsArray || hasReferenceMark(parameter.Range()),
 				}
 			}
 		}
 		index++
 	}
 	return result
+}
+
+func orderedParameters(parameters map[symbol.ID]parameterFact) ([]symbol.ID, []bool) {
+	ids := make([]symbol.ID, len(parameters))
+	references := make([]bool, len(parameters))
+	for id, parameter := range parameters {
+		ids[parameter.index] = id
+		references[parameter.index] = parameter.mutable
+	}
+	return ids, references
 }
 
 func applyReferenceFacts(
@@ -227,9 +461,18 @@ func scopeWithin(table *symbol.Table, scope, parent symbol.ID) bool {
 	return false
 }
 
-func rangeHasToken(tokens []parser.CompactToken, within parser.ByteRange, kind token.Kind) bool {
+func compactRangeHasToken(tokens []parser.CompactToken, within parser.ByteRange, kind token.Kind) bool {
 	for _, item := range tokens {
 		if int(item.Start.Offset) >= within.Start && int(item.End.Offset) <= within.End && item.Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+func tokenRangeHasToken(tokens []token.Token, within parser.ByteRange, kind token.Kind) bool {
+	for _, item := range tokens {
+		if item.Start.Offset >= within.Start && item.End.Offset <= within.End && item.Kind == kind {
 			return true
 		}
 	}
@@ -252,4 +495,48 @@ func sortedIndexes(values map[int]struct{}) []int {
 	}
 	sort.Ints(result)
 	return result
+}
+
+func idSet(values []symbol.ID) map[symbol.ID]struct{} {
+	result := make(map[symbol.ID]struct{}, len(values))
+	addIDs(result, values)
+	return result
+}
+
+func addIDs(target map[symbol.ID]struct{}, values []symbol.ID) {
+	for _, value := range values {
+		target[value] = struct{}{}
+	}
+}
+
+func indexSet(values []int) map[int]struct{} {
+	result := make(map[int]struct{}, len(values))
+	for _, value := range values {
+		result[value] = struct{}{}
+	}
+	return result
+}
+
+func equalIDs(left, right []symbol.ID) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func equalIndexes(left, right []int) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }

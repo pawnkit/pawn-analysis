@@ -68,6 +68,35 @@ func BuildMappedNavigationWithSpansContext(
 	return buildDeclarations(ctx, root, file, nil, mapSpan, true)
 }
 
+// BuildMappedWithSpansContext builds full symbols using mapped source spans.
+func BuildMappedWithSpansContext(
+	ctx context.Context,
+	root parser.SyntaxNode,
+	file source.FileID,
+	mapSpan func(parser.SyntaxNode) (source.Span, bool),
+) (*Table, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	b := &builder{
+		ctx: ctx, cancellable: true, file: file, mapSpan: mapSpan, table: &Table{File: file},
+	}
+	fileScope := b.newScope(ScopeFile, 0)
+	decls := root.Declarations()
+	for decls.Next() {
+		b.walk(fileScope, decls.Declaration())
+		if b.cancelled != nil {
+			return nil, b.cancelled
+		}
+	}
+	b.resolveFileReferences(fileScope)
+	b.buildSpanIndexes()
+	if b.cancelled != nil {
+		return nil, b.cancelled
+	}
+	return b.table, nil
+}
+
 func buildDeclarations(
 	ctx context.Context,
 	root parser.SyntaxNode,

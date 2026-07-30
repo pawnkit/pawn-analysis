@@ -14,6 +14,7 @@ import (
 	analysis "github.com/pawnkit/pawn-analysis"
 	"github.com/pawnkit/pawn-analysis/preprocess"
 	"github.com/pawnkit/pawn-analysis/sema"
+	"github.com/pawnkit/pawn-analysis/symbol"
 	parser "github.com/pawnkit/pawn-parser"
 	"github.com/pawnkit/pawnkit-core/source"
 )
@@ -368,6 +369,25 @@ func TestAnalyzeReparsesChangedDeclaration(t *testing.T) {
 	if !reflect.DeepEqual(after.Diagnostics, clean.Diagnostics) ||
 		!reflect.DeepEqual(after.Declarations, clean.Declarations) {
 		t.Fatal("incremental declaration analysis differs from clean analysis")
+	}
+}
+
+func TestAnalyzeCollectsFunctionFactsOnRequest(t *testing.T) {
+	text := []byte("new value;\nstock Read() { return value; }\n")
+	without := analysis.Analyze(text, analysis.Options{})
+	if without.FunctionFacts != nil {
+		t.Fatal("default analysis collected function facts")
+	}
+	with := analysis.Analyze(text, analysis.Options{CollectFunctionFacts: true})
+	var function symbol.ID
+	for _, item := range with.Symbols.Symbols {
+		if item.Name == "Read" {
+			function = item.ID
+			break
+		}
+	}
+	if function == 0 || len(with.FunctionFacts[function].ReadsGlobals) != 1 {
+		t.Fatal("requested function facts were not collected")
 	}
 }
 

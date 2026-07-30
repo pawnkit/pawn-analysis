@@ -19,16 +19,17 @@ import (
 
 // Options configures one file analysis.
 type Options struct {
-	URI             source.URI
-	Includes        preprocess.IncludeResolver
-	Names           sema.Resolver
-	Predefined      map[string]string
-	Revision        string
-	RetainExpanded  bool
-	MaxOutputTokens int
-	SkipSemantics   bool
-	TokenCache      *preprocess.TokenCache
-	Previous        *Result
+	URI                  source.URI
+	Includes             preprocess.IncludeResolver
+	Names                sema.Resolver
+	Predefined           map[string]string
+	Revision             string
+	RetainExpanded       bool
+	MaxOutputTokens      int
+	SkipSemantics        bool
+	CollectFunctionFacts bool
+	TokenCache           *preprocess.TokenCache
+	Previous             *Result
 	// ReuseCompatibleExpansion allows editor diagnostics to reuse an unchanged
 	// dependency graph. Expanded source may describe the previous local body.
 	ReuseCompatibleExpansion bool
@@ -56,6 +57,7 @@ type Result struct {
 	ExpandedSymbols     *symbol.Table
 	Semantics           sema.Result
 	ControlFlow         []sema.FunctionFlow
+	FunctionFacts       map[symbol.ID]sema.FunctionFacts
 	Diagnostics         []diagnostic.Diagnostic
 	Reuse               ReuseStats
 	baseDiagnostics     []diagnostic.Diagnostic
@@ -708,6 +710,9 @@ func CompleteContext(ctx context.Context, prepared *Result, opts Options) (*Resu
 	result.nameResult = nameResult
 	result.stateDiagnostics = stateDiagnostics
 	result.orderDiagnostics = orderDiagnostics
+	if opts.CollectFunctionFacts {
+		result.FunctionFacts = sema.BuildFunctionFacts(result.Parse, result.Symbols)
+	}
 	result.Diagnostics = append(append([]diagnostic.Diagnostic(nil), prepared.baseDiagnostics...), semantics.Diagnostics...)
 	addDiagnosticDocs(result.Diagnostics)
 	return retainExpanded(&result, opts.RetainExpanded), nil

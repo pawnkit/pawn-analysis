@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.28.0 - 2026-07-30
+
+### Added
+
+- Collect direct function effects for consumers that request them.
+
 ## 0.27.1 - 2026-07-30
 
 ### Performance

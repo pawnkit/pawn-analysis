@@ -41,6 +41,7 @@ type ReuseStats struct {
 	Tags                int
 	CompatibleExpansion bool
 	RebasedSyntax       bool
+	ReparsedDeclaration bool
 }
 
 // Result is one immutable file analysis.
@@ -147,6 +148,7 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 	reusedOriginal := reusableOriginalSyntax(pre, opts.Previous, opts.ReuseCompatibleExpansion)
 	stableOriginalPositions := reusedOriginal
 	rebasedOriginal := false
+	reparsedDeclaration := false
 	if reusedOriginal {
 		current := *opts.Previous.Parse
 		current.Source = text
@@ -160,6 +162,16 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 			parser.ByteRange{Start: localEdit.After.Start, End: localEdit.After.End},
 		)
 		rebasedOriginal = reusedOriginal
+		if !reusedOriginal {
+			parsed, reusedOriginal = parser.ReparseCompactDeclaration(
+				text,
+				pre.OriginalTokens,
+				opts.Previous.Parse,
+				parser.ByteRange{Start: localEdit.Before.Start, End: localEdit.Before.End},
+				parser.ByteRange{Start: localEdit.After.Start, End: localEdit.After.End},
+			)
+			reparsedDeclaration = reusedOriginal
+		}
 	}
 	if reusedExpanded {
 		expanded = opts.Previous.ExpandedParse
@@ -291,6 +303,7 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 	prepared.Reuse.Declarations = reusedDeclarationCount
 	prepared.Reuse.CompatibleExpansion = localCandidate
 	prepared.Reuse.RebasedSyntax = rebasedOriginal
+	prepared.Reuse.ReparsedDeclaration = reparsedDeclaration
 	if opts.SkipSemantics {
 		return retainExpanded(prepared, opts.RetainExpanded), nil
 	}

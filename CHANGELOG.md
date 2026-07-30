@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.27.0 - 2026-07-30
+
+### Added
+
+- Report when incremental analysis reparses one changed declaration.
+
+### Performance
+
+- Reuse the surrounding compact syntax after token-moving edits inside one declaration.
+
 ## 0.26.0 - 2026-07-29
 
 ### Added

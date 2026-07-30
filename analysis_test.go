@@ -344,6 +344,30 @@ func TestAnalyzeRebasesOriginalSyntaxForTriviaEdit(t *testing.T) {
 	}
 }
 
+func TestAnalyzeReparsesChangedDeclaration(t *testing.T) {
+	const revision = "project:1"
+	beforeText := []byte("stock Work() { return value; }\nstock Keep() { return 2; }\n")
+	afterText := []byte("stock Work() { return (value); }\nstock Keep() { return 2; }\n")
+	before := analysis.Analyze(beforeText, analysis.Options{Revision: revision})
+	var reusedParse int
+	after := analysis.Analyze(afterText, analysis.Options{
+		Previous: before, Revision: revision, ReuseCompatibleExpansion: true,
+		Trace: func(event analysis.TraceEvent) {
+			if event.Stage == analysis.StageParseOriginal {
+				reusedParse = event.Reused
+			}
+		},
+	})
+	if reusedParse != 1 || !after.Reuse.ReparsedDeclaration {
+		t.Fatal("changed declaration was fully reparsed")
+	}
+	clean := analysis.Analyze(afterText, analysis.Options{Revision: revision})
+	if !reflect.DeepEqual(after.Diagnostics, clean.Diagnostics) ||
+		!reflect.DeepEqual(after.Declarations, clean.Declarations) {
+		t.Fatal("incremental declaration analysis differs from clean analysis")
+	}
+}
+
 func TestAnalyzeReusedSyntaxReadsCurrentSource(t *testing.T) {
 	const revision = "project:1"
 	before := analysis.Analyze(

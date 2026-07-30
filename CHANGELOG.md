@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.29.2 - 2026-07-30
+
+### Performance
+
+- Find parameter reference markers without rescanning the full token stream.
+
 ## 0.29.1 - 2026-07-30
 
 ### Fixed

@@ -466,7 +466,13 @@ func scopeWithin(table *symbol.Table, scope, parent symbol.ID) bool {
 }
 
 func compactRangeHasToken(tokens []parser.CompactToken, within parser.ByteRange, kind token.Kind) bool {
-	for _, item := range tokens {
+	index := sort.Search(len(tokens), func(index int) bool {
+		return int(tokens[index].End.Offset) > within.Start
+	})
+	for _, item := range tokens[index:] {
+		if int(item.Start.Offset) >= within.End {
+			break
+		}
 		if int(item.Start.Offset) >= within.Start && int(item.End.Offset) <= within.End && item.Kind == kind {
 			return true
 		}
@@ -475,7 +481,13 @@ func compactRangeHasToken(tokens []parser.CompactToken, within parser.ByteRange,
 }
 
 func tokenRangeHasToken(tokens []token.Token, within parser.ByteRange, kind token.Kind) bool {
-	for _, item := range tokens {
+	index := sort.Search(len(tokens), func(index int) bool {
+		return tokens[index].End.Offset > within.Start
+	})
+	for _, item := range tokens[index:] {
+		if item.Start.Offset >= within.End {
+			break
+		}
 		if item.Start.Offset >= within.Start && item.End.Offset <= within.End && item.Kind == kind {
 			return true
 		}

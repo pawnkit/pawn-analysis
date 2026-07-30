@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.27.1 - 2026-07-30
+
+### Performance
+
+- Reuse symbol resolution when an edit only wraps or unwraps existing text.
+
 ## 0.27.0 - 2026-07-30
 
 ### Added

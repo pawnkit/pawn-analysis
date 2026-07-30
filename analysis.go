@@ -231,6 +231,11 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 	} else if patched, ok := patchedOriginalSymbols(pre, opts.Previous, localEdit, localCandidate, stableOriginalPositions, fileID); ok {
 		table = patched
 		stage.end(ctx, 1)
+	} else if rebased, ok := rebasedParenthesizedSymbols(
+		pre, opts.Previous, localEdit, reparsedDeclaration,
+	); ok {
+		table = rebased
+		stage.end(ctx, 1)
 	} else {
 		table, err = symbol.BuildContext(ctx, parsed.Syntax(), fileID)
 		if err != nil {
@@ -308,6 +313,27 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		return retainExpanded(prepared, opts.RetainExpanded), nil
 	}
 	return CompleteContext(ctx, prepared, opts)
+}
+
+func rebasedParenthesizedSymbols(
+	current *preprocess.Result,
+	previous *Result,
+	edit preprocess.CompatibleEdit,
+	reparsed bool,
+) (*symbol.Table, bool) {
+	if !reparsed || current == nil || previous == nil || previous.Preprocess == nil ||
+		previous.Symbols == nil {
+		return nil, false
+	}
+	return symbol.RebaseParenthesized(
+		previous.Symbols,
+		previous.Preprocess.Source,
+		current.Source,
+		previous.Preprocess.OriginalTokens,
+		current.OriginalTokens,
+		parser.ByteRange{Start: edit.Before.Start, End: edit.Before.End},
+		parser.ByteRange{Start: edit.After.Start, End: edit.After.End},
+	)
 }
 
 func patchedOriginalSymbols(

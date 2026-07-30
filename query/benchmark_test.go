@@ -196,6 +196,50 @@ func BenchmarkIncrementalIdentifierReferenceAnalysis(b *testing.B) {
 	}
 }
 
+func BenchmarkIncrementalParenthesizedAnalysis(b *testing.B) {
+	const functions = 2000
+	uri := source.FileURI("gamemode.pwn")
+	base := syntheticGlobalGamemode(functions)
+	edit := strings.LastIndex(string(base), "return x") + len("return ")
+	text := append([]byte(nil), base...)
+	snapshot := New(Document{URI: uri, Text: text, Version: 1})
+	opts := analysis.Options{Revision: "benchmark", ReuseCompatibleExpansion: true}
+	if _, err := snapshot.Analyze(context.Background(), uri, opts); err != nil {
+		b.Fatal(err)
+	}
+
+	b.ReportAllocs()
+	b.SetBytes(int64(len(text)))
+	for version := int64(2); b.Loop(); version++ {
+		b.StopTimer()
+		var nextText []byte
+		if version%2 == 0 {
+			nextText = make([]byte, 0, len(base)+2)
+			nextText = append(nextText, base[:edit]...)
+			nextText = append(nextText, '(')
+			nextText = append(nextText, base[edit])
+			nextText = append(nextText, ')')
+			nextText = append(nextText, base[edit+1:]...)
+		} else {
+			nextText = append([]byte(nil), base...)
+		}
+		next, ok := snapshot.Update(Document{URI: uri, Text: nextText, Version: version})
+		if !ok {
+			b.Fatal("update rejected")
+		}
+		b.StartTimer()
+
+		result, err := next.Analyze(context.Background(), uri, opts)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if !result.Reuse.ReparsedDeclaration {
+			b.Fatal("declaration was fully reparsed")
+		}
+		snapshot = next
+	}
+}
+
 func BenchmarkIncrementalTriviaAnalysis(b *testing.B) {
 	const functions = 2000
 	uri := source.FileURI("gamemode.pwn")

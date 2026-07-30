@@ -33,6 +33,24 @@ func (r callableResolver) ResolveCallable(name string) (sema.Callable, bool) {
 	return callable, ok
 }
 
+func (r callableResolver) ResolveCallEffects(name string) (sema.CallEffects, bool) {
+	_, ok := r[name]
+	if !ok {
+		return sema.CallEffects{}, false
+	}
+	return sema.CallEffects{Complete: true, IntrinsicImpure: true}, true
+}
+
+type externalEffectResolver struct {
+	callableResolver
+	effects map[string]sema.CallEffects
+}
+
+func (r externalEffectResolver) ResolveCallEffects(name string) (sema.CallEffects, bool) {
+	effects, ok := r.effects[name]
+	return effects, ok
+}
+
 func TestAnalyzeContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -413,6 +431,35 @@ func TestAnalyzeCollectsFunctionFactsAcrossIncludes(t *testing.T) {
 	if forward == 0 || !ok || !facts.Complete ||
 		!reflect.DeepEqual(facts.MutatedParameters, []int{0}) {
 		t.Fatalf("included function facts = %#v, found = %v", facts, ok)
+	}
+}
+
+func TestAnalyzeCollectsExternalFunctionEffects(t *testing.T) {
+	result := analysis.Analyze(
+		[]byte("stock Forward(&value) { External(value); }\n"),
+		analysis.Options{
+			Names: externalEffectResolver{
+				callableResolver: callableResolver{"External": {}},
+				effects: map[string]sema.CallEffects{
+					"External": {
+						Complete: true, IntrinsicImpure: true, MutatedParameters: []int{0},
+					},
+				},
+			},
+			CollectFunctionFacts: true,
+		},
+	)
+	var forward symbol.ID
+	for _, item := range result.Symbols.Symbols {
+		if item.Name == "Forward" {
+			forward = item.ID
+			break
+		}
+	}
+	facts := result.FunctionFacts[forward]
+	if forward == 0 || !facts.Complete || !facts.IntrinsicImpure ||
+		!reflect.DeepEqual(facts.MutatedParameters, []int{0}) {
+		t.Fatalf("external function facts = %#v", facts)
 	}
 }
 

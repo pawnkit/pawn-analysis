@@ -25,7 +25,20 @@ type FunctionFacts struct {
 // FunctionCall records resolved arguments for one call.
 type FunctionCall struct {
 	Function  symbol.ID
+	Name      string
 	Arguments []symbol.ID
+}
+
+// CallEffects describes effects supplied by an external API.
+type CallEffects struct {
+	Complete          bool
+	IntrinsicImpure   bool
+	MutatedParameters []int
+}
+
+// CallEffectResolver resolves functions not declared in the source graph.
+type CallEffectResolver interface {
+	ResolveCallEffects(name string) (CallEffects, bool)
 }
 
 // BuildFunctionFacts collects direct effects without following calls.
@@ -103,6 +116,15 @@ func ResolveFunctionFacts(
 	direct map[symbol.ID]FunctionFacts,
 	table *symbol.Table,
 ) map[symbol.ID]FunctionFacts {
+	return ResolveFunctionFactsWithResolver(direct, table, nil)
+}
+
+// ResolveFunctionFactsWithResolver also propagates external call effects.
+func ResolveFunctionFactsWithResolver(
+	direct map[symbol.ID]FunctionFacts,
+	table *symbol.Table,
+	resolver CallEffectResolver,
+) map[symbol.ID]FunctionFacts {
 	if len(direct) == 0 || table == nil {
 		return direct
 	}
@@ -119,6 +141,20 @@ func ResolveFunctionFacts(
 			complete := current.Complete
 			impure := current.IntrinsicImpure
 			for _, call := range current.CallSites {
+				if call.Function == 0 {
+					external, ok := resolverEffects(resolver, call.Name)
+					if !ok || !external.Complete {
+						complete = false
+						continue
+					}
+					impure = impure || external.IntrinsicImpure
+					if !propagateMutations(call, FunctionFacts{
+						MutatedParameters: external.MutatedParameters,
+					}, current, table, writes, mutated) {
+						complete = false
+					}
+					continue
+				}
 				callee, ok := result[call.Function]
 				if !ok || !callee.Complete {
 					complete = false
@@ -148,6 +184,13 @@ func ResolveFunctionFacts(
 		}
 	}
 	return result
+}
+
+func resolverEffects(resolver CallEffectResolver, name string) (CallEffects, bool) {
+	if resolver == nil || name == "" {
+		return CallEffects{}, false
+	}
+	return resolver.ResolveCallEffects(name)
 }
 
 func propagateMutations(
@@ -276,10 +319,10 @@ func functionCall(
 	}
 	calleeSpan, mapped := spanOf(callee)
 	reference, ok := references[calleeSpan]
-	if !mapped || !ok || reference.Resolved == 0 {
+	if !mapped || !ok {
 		return FunctionCall{}, false
 	}
-	result := FunctionCall{Function: reference.Resolved}
+	result := FunctionCall{Function: reference.Resolved, Name: reference.Name}
 	arguments, ok := call.Field("arguments")
 	if !ok {
 		return result, true
@@ -383,9 +426,6 @@ func applyReferenceFacts(
 	calls map[symbol.ID]struct{},
 ) {
 	if reference.Resolved == 0 {
-		if reference.IsCall {
-			facts.Complete = false
-		}
 		return
 	}
 	resolved, ok := table.Symbol(reference.Resolved)

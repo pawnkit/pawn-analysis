@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.30.0 - 2026-07-30
+
+### Added
+
+- Resolve function effects for calls supplied by an external API.
+
 ## 0.29.2 - 2026-07-30
 
 ### Performance

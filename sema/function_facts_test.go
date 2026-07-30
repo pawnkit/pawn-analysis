@@ -62,9 +62,49 @@ func TestBuildFunctionFactsMarksUnknownCallsIncomplete(t *testing.T) {
 	file := parser.ParseCompact(text, parser.ParseOptions{})
 	table := symbol.Build(file.Syntax(), source.FileID(1))
 	run := symbolByName(t, table, "Run")
-	if sema.BuildFunctionFacts(file, table)[run.ID].Complete {
+	facts := sema.ResolveFunctionFacts(sema.BuildFunctionFacts(file, table), table)
+	if facts[run.ID].Complete {
 		t.Fatal("unresolved call produced complete function facts")
 	}
+}
+
+func TestResolveFunctionFactsUsesExternalEffects(t *testing.T) {
+	t.Parallel()
+
+	text := []byte(`
+new shared;
+stock Forward(&value) { External(value); }
+stock WriteGlobal() { Forward(shared); }
+`)
+	file := parser.ParseCompact(text, parser.ParseOptions{})
+	table := symbol.Build(file.Syntax(), source.FileID(1))
+	facts := sema.ResolveFunctionFactsWithResolver(
+		sema.BuildFunctionFacts(file, table),
+		table,
+		callEffectResolver{
+			"External": {
+				Complete: true, IntrinsicImpure: true, MutatedParameters: []int{0},
+			},
+		},
+	)
+
+	forward := facts[symbolByName(t, table, "Forward").ID]
+	if !forward.Complete || !forward.IntrinsicImpure ||
+		!reflect.DeepEqual(forward.MutatedParameters, []int{0}) {
+		t.Fatalf("Forward facts = %#v", forward)
+	}
+	writeGlobal := facts[symbolByName(t, table, "WriteGlobal").ID]
+	if !writeGlobal.Complete || !writeGlobal.IntrinsicImpure ||
+		len(writeGlobal.WritesGlobals) != 1 {
+		t.Fatalf("WriteGlobal facts = %#v", writeGlobal)
+	}
+}
+
+type callEffectResolver map[string]sema.CallEffects
+
+func (r callEffectResolver) ResolveCallEffects(name string) (sema.CallEffects, bool) {
+	effects, ok := r[name]
+	return effects, ok
 }
 
 func TestResolveFunctionFactsPropagatesCalls(t *testing.T) {

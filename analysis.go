@@ -734,7 +734,11 @@ func CompleteContext(ctx context.Context, prepared *Result, opts Options) (*Resu
 		} else {
 			direct = sema.BuildFunctionFacts(factsFile, factsTable)
 		}
-		result.FunctionFacts = sema.ResolveFunctionFacts(direct, factsTable)
+		var callEffects sema.CallEffectResolver
+		if resolver, ok := opts.Names.(sema.CallEffectResolver); ok {
+			callEffects = resolver
+		}
+		result.FunctionFacts = sema.ResolveFunctionFactsWithResolver(direct, factsTable, callEffects)
 	}
 	result.Diagnostics = append(append([]diagnostic.Diagnostic(nil), prepared.baseDiagnostics...), semantics.Diagnostics...)
 	addDiagnosticDocs(result.Diagnostics)

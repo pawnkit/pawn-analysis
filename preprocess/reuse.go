@@ -3,6 +3,7 @@ package preprocess
 import (
 	"context"
 
+	"github.com/pawnkit/pawn-parser/lexer"
 	"github.com/pawnkit/pawn-parser/token"
 )
 
@@ -57,9 +58,13 @@ func ReuseCompatibleContext(
 	if !changed || directiveRange(previous.Source, edit.Before) || directiveRange(src, edit.After) {
 		return nil, CompatibleEdit{}, false, nil
 	}
-	tokens, err := cache.tokenizeContext(ctx, true, uri, src)
-	if err != nil {
-		return nil, CompatibleEdit{}, false, err
+	tokens, reusedToken := reuseSingleTokenEdit(src, previous.Source, edit, previous.OriginalTokens)
+	var err error
+	if !reusedToken {
+		tokens, err = cache.tokenizeContext(ctx, true, uri, src)
+		if err != nil {
+			return nil, CompatibleEdit{}, false, err
+		}
 	}
 	if touchesMacro(tokens, src, edit.After, previous.Macros) ||
 		touchesMacro(previous.OriginalTokens, previous.Source, edit.Before, previous.Macros) {
@@ -108,6 +113,40 @@ func ReuseCompatibleContext(
 		result.Macros[name] = macro
 	}
 	return &result, edit, true, nil
+}
+
+// reuseSingleTokenEdit avoids scanning the whole file for a safe token value edit.
+func reuseSingleTokenEdit(src, previous []byte, edit CompatibleEdit, tokens []token.Token) ([]token.Token, bool) {
+	if edit.Before.End-edit.Before.Start != edit.After.End-edit.After.Start ||
+		edit.Before.Start == edit.Before.End {
+		return nil, false
+	}
+	if edit.Before.Start < 0 || edit.Before.End > len(previous) ||
+		edit.After.Start < 0 || edit.After.End > len(src) {
+		return nil, false
+	}
+	var index = -1
+	for i, current := range tokens {
+		if current.Start.Offset == edit.Before.Start && current.End.Offset == edit.Before.End {
+			if index != -1 {
+				return nil, false
+			}
+			index = i
+		}
+	}
+	if index == -1 {
+		return nil, false
+	}
+	replacement := src[edit.After.Start:edit.After.End]
+	local := lexer.Tokenize(replacement)
+	if len(local) != 2 || local[1].Kind != token.EOF || local[0].Kind != tokens[index].Kind {
+		return nil, false
+	}
+	if local[0].Kind.IsTrivia() || local[0].Kind == token.Unknown {
+		return nil, false
+	}
+	patched := append([]token.Token(nil), tokens...)
+	return patched, true
 }
 
 func compatibleEdit(before, after []byte) (CompatibleEdit, bool) {

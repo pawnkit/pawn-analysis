@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.30.4 - 2026-08-01
+
+### Performance
+
+- Reuse the token stream for safe same-length literal and identifier edits
+  instead of retokenizing the whole source file.
+
 ## 0.30.3 - 2026-08-01
 
 ### Performance

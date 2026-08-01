@@ -310,6 +310,19 @@ func TestReferenceToLaterGlobalResolves(t *testing.T) {
 	t.Fatal("reference to later global did not resolve")
 }
 
+func TestCallableLookupMatchesArgumentCount(t *testing.T) {
+	table, _ := buildTable(t, "stock Format(value) { return value; }\nstock Format(value, width) { return value + width; }\n")
+
+	one, ok := table.LookupCallable(1, "Format", 1)
+	if !ok || one.MinArgs != 1 || one.MaxArgs != 1 {
+		t.Fatalf("one-argument lookup = %+v, %v", one, ok)
+	}
+	two, ok := table.LookupCallable(1, "Format", 2)
+	if !ok || two.MinArgs != 2 || two.MaxArgs != 2 {
+		t.Fatalf("two-argument lookup = %+v, %v", two, ok)
+	}
+}
+
 func TestTagExtraction(t *testing.T) {
 	src := "stock Float:ComputeRatio() { new Float:total = 10.0; return total; }\n"
 	table, _ := buildTable(t, src)

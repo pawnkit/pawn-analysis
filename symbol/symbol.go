@@ -145,6 +145,7 @@ type Table struct {
 
 	declarations map[source.Span]ID
 	references   map[source.Span]ID
+	callables    map[ID]map[string][]ID
 	stableOnce   sync.Once
 	stableIDs    map[ID]StableID
 	exports      [32]byte
@@ -279,6 +280,34 @@ func (t *Table) Lookup(scope ID, name string) (Symbol, bool) {
 
 // LookupCallable resolves a call by name and argument count.
 func (t *Table) LookupCallable(scope ID, name string, argCount int) (Symbol, bool) {
+	if t.callables != nil {
+		for scope != 0 {
+			sc, ok := t.Scope(scope)
+			if !ok {
+				return Symbol{}, false
+			}
+			ids := t.callables[sc.ID][name]
+			var fallback Symbol
+			for _, id := range ids {
+				item, ok := t.Symbol(id)
+				if !ok {
+					continue
+				}
+				if fallback.ID == 0 {
+					fallback = item
+				}
+				if argCount < 0 || argCount >= item.MinArgs && (item.MaxArgs < 0 || argCount <= item.MaxArgs) {
+					return item, true
+				}
+			}
+			if fallback.ID != 0 {
+				return fallback, true
+			}
+			scope = sc.Parent
+		}
+		return Symbol{}, false
+	}
+
 	for scope != 0 {
 		sc, ok := t.Scope(scope)
 		if !ok {

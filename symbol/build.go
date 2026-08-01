@@ -223,6 +223,17 @@ func (b *builder) appendSymbol(sym Symbol) ID {
 	id := ID(len(b.table.Symbols) + 1)
 	sym.ID = id
 	b.table.Symbols = append(b.table.Symbols, sym)
+	if sym.Kind.IsCallable() && !IsTestEntryPoint(sym) {
+		if b.table.callables == nil {
+			b.table.callables = make(map[ID]map[string][]ID)
+		}
+		byName := b.table.callables[sym.Scope]
+		if byName == nil {
+			byName = make(map[string][]ID)
+			b.table.callables[sym.Scope] = byName
+		}
+		byName[sym.Name] = append(byName[sym.Name], id)
+	}
 	return id
 }
 

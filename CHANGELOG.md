@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.30.6 - 2026-08-01
+
+### Performance
+
+- Index callable symbols by scope and name before resolving calls.
+
 ## 0.30.5 - 2026-08-01
 
 ### Performance

@@ -30,6 +30,7 @@ func PatchReference(previous *Table, span source.Span, name string) (*Table, boo
 		File: previous.File, Symbols: previous.Symbols, Scopes: previous.Scopes,
 		References:  append([]Reference(nil), previous.References...),
 		Diagnostics: previous.Diagnostics, declarations: previous.declarations,
+		callables: previous.callables,
 	}
 	reference := &next.References[index]
 	if reference.Resolved == 0 {
@@ -75,6 +76,7 @@ func RebaseParenthesized(
 		Symbols:     append([]Symbol(nil), previous.Symbols...),
 		References:  append([]Reference(nil), previous.References...),
 		Diagnostics: previous.Diagnostics,
+		callables:   previous.callables,
 	}
 	next.declarations = make(map[source.Span]ID, len(previous.declarations))
 	for index := range next.Symbols {

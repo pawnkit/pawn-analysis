@@ -54,6 +54,10 @@ Whitespace edits may shift a clean syntax tree when token text and
 parser-significant trivia stay unchanged. Any ambiguous edit falls back to a
 full parse.
 
+Trivia-only edits keep the original syntax, symbol table, and stable semantic
+checks. The current source buffer is still attached to the reused syntax, so
+locations and diagnostics use the new text.
+
 The following changes force wider work:
 
 - Macro definitions and conditional directives rebuild preprocessing.

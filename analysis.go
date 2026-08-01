@@ -93,12 +93,14 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 	var pre *preprocess.Result
 	var err error
 	reusedPreprocess := false
+	reusedTrivia := false
 	var localEdit preprocess.CompatibleEdit
 	localCandidate := false
 	if opts.Previous != nil && opts.Revision != "" && opts.Previous.revision == opts.Revision {
-		pre, reusedPreprocess, err = preprocess.ReuseTriviaContext(
+		pre, reusedTrivia, err = preprocess.ReuseTriviaContext(
 			ctx, text, uri.String(), opts.TokenCache, opts.Previous.Preprocess,
 		)
+		reusedPreprocess = reusedTrivia
 		if err == nil && !reusedPreprocess && opts.ReuseCompatibleExpansion {
 			pre, localEdit, localCandidate, err = preprocess.ReuseCompatibleContext(
 				ctx, text, uri.String(), opts.TokenCache, opts.Previous.Preprocess,
@@ -147,7 +149,7 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 	var expandedErr error
 	var expandedTable *symbol.Table
 	reusedExpanded := reusableExpanded(pre, opts.Previous)
-	reusedOriginal := reusableOriginalSyntax(pre, opts.Previous, opts.ReuseCompatibleExpansion)
+	reusedOriginal := reusableOriginalSyntax(pre, opts.Previous, opts.ReuseCompatibleExpansion || reusedTrivia)
 	stableOriginalPositions := reusedOriginal
 	rebasedOriginal := false
 	reparsedDeclaration := false
@@ -226,7 +228,9 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		return nil, expandedErr
 	}
 	stage = beginStage(opts.Trace, StageSymbolsOriginal)
-	reusedSymbols := reusableOriginalSymbols(pre, opts.Previous, localEdit, localCandidate, stableOriginalPositions)
+	reusedSymbols := reusableOriginalSymbols(
+		pre, opts.Previous, localEdit, localCandidate, stableOriginalPositions, reusedTrivia,
+	)
 	if reusedSymbols {
 		table = opts.Previous.Symbols
 		stage.end(ctx, 1)
@@ -305,7 +309,7 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		File: fileID, Registry: registry, Preprocess: pre, Parse: parsed, ExpandedParse: expanded,
 		Declarations: declarations, Symbols: table, ExpandedSymbols: expandedTable,
 		Diagnostics: diagnostics, baseDiagnostics: diagnostics,
-		reuseLocalSemantics: localCandidate && stableOriginalPositions && opts.Previous != nil &&
+		reuseLocalSemantics: (localCandidate || reusedTrivia) && stableOriginalPositions && opts.Previous != nil &&
 			table == opts.Previous.Symbols,
 		revision: opts.Revision,
 	}
@@ -447,9 +451,16 @@ func reusableOriginalSymbols(
 	edit preprocess.CompatibleEdit,
 	localCandidate bool,
 	reusedSyntax bool,
+	reusedTrivia bool,
 ) bool {
-	if !localCandidate || !reusedSyntax || current == nil || previous == nil ||
+	if !reusedSyntax || current == nil || previous == nil ||
 		previous.Symbols == nil || !previous.Declarations.Reliable() {
+		return false
+	}
+	if reusedTrivia {
+		return true
+	}
+	if !localCandidate {
 		return false
 	}
 	insideFunction := false

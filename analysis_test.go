@@ -250,6 +250,53 @@ func TestAnalyzeReusesExpandedViewForEquivalentTriviaEdit(t *testing.T) {
 	}
 }
 
+func TestAnalyzeReusesOriginalViewForTriviaEditWithoutCompatibleExpansion(t *testing.T) {
+	uri := source.FileURI("test.pwn")
+	beforeText := []byte("stock Work() { return 1; } // old\n")
+	before := analysis.Analyze(beforeText, analysis.Options{
+		URI: uri, RetainExpanded: true, Revision: "project:1",
+	})
+	var reused [5]int
+	after, err := analysis.AnalyzeContext(
+		context.Background(),
+		[]byte("stock Work() { return 1; } // new\n"),
+		analysis.Options{
+			URI: uri, RetainExpanded: true, Previous: before, Revision: "project:1",
+			Trace: func(event analysis.TraceEvent) {
+				switch event.Stage {
+				case analysis.StageParseOriginal:
+					reused[0] = event.Reused
+				case analysis.StageSymbolsOriginal:
+					reused[1] = event.Reused
+				case analysis.StageSemanticNames:
+					reused[2] = event.Reused
+				case analysis.StageSemanticStates:
+					reused[3] = event.Reused
+				case analysis.StageSemanticOrder:
+					reused[4] = event.Reused
+				}
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if &after.Parse.Tree.Nodes[0] != &before.Parse.Tree.Nodes[0] || after.Symbols != before.Symbols {
+		t.Fatal("trivia edit rebuilt the original syntax or symbols")
+	}
+	for stage, count := range reused {
+		if count != 1 {
+			t.Fatalf("stage %d was rebuilt", stage)
+		}
+	}
+	clean := analysis.Analyze([]byte("stock Work() { return 1; } // new\n"), analysis.Options{
+		URI: uri, RetainExpanded: true, Revision: "project:1",
+	})
+	if !reflect.DeepEqual(after.Diagnostics, clean.Diagnostics) {
+		t.Fatalf("trivia reuse differs from clean analysis:\ngot  %#v\nwant %#v", after.Diagnostics, clean.Diagnostics)
+	}
+}
+
 func TestAnalyzeReusesExpandedViewForLocalTokenEdit(t *testing.T) {
 	includes := preprocess.MapResolver{
 		"shared": bytes.Repeat([]byte("stock Included() {}\n"), 20),

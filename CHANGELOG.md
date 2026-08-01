@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.30.3 - 2026-08-01
+
+### Performance
+
+- Reuse original syntax, symbols, and stable semantic results for trivia-only
+  edits, reducing the query benchmark from about 628 ms to 32 ms.
+
 ## 0.30.2 - 2026-08-01
 
 ### Fixed

@@ -8,10 +8,10 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/pawnkit/pawn-analysis/preprocess"
 	"github.com/pawnkit/pawn-analysis/sema"
 	"github.com/pawnkit/pawn-analysis/symbol"
 	parser "github.com/pawnkit/pawn-parser"
+	"github.com/pawnkit/pawn-parser/preprocess"
 	"github.com/pawnkit/pawn-parser/token"
 	"github.com/pawnkit/pawnkit-core/diagnostic"
 	"github.com/pawnkit/pawnkit-core/source"
@@ -21,8 +21,14 @@ import (
 type Options struct {
 	URI                  source.URI
 	Includes             preprocess.IncludeResolver
+	Prefix               string
+	PrefixOptional       bool
 	Names                sema.Resolver
 	Predefined           map[string]string
+	PredefinedSymbols    map[string]string
+	ResolvedConstants    map[string]string
+	Compatibility        bool
+	Listing              *preprocess.ListingOptions
 	Revision             string
 	RetainExpanded       bool
 	MaxOutputTokens      int
@@ -123,11 +129,17 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 	}
 	if err == nil && !reusedPreprocess {
 		pre, err = preprocess.RunContext(ctx, text, preprocess.Options{
-			URI:             uri.String(),
-			Resolver:        opts.Includes,
-			Predefined:      opts.Predefined,
-			MaxOutputTokens: opts.MaxOutputTokens,
-			TokenCache:      opts.TokenCache,
+			URI:               uri.String(),
+			Resolver:          opts.Includes,
+			Prefix:            opts.Prefix,
+			PrefixOptional:    opts.PrefixOptional,
+			Predefined:        opts.Predefined,
+			Symbols:           opts.PredefinedSymbols,
+			ResolvedConstants: opts.ResolvedConstants,
+			Compatibility:     opts.Compatibility,
+			MaxOutputTokens:   opts.MaxOutputTokens,
+			Listing:           opts.Listing,
+			TokenCache:        opts.TokenCache,
 		})
 	}
 	if reusedPreprocess {

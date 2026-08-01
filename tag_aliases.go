@@ -4,7 +4,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/pawnkit/pawn-analysis/preprocess"
+	"github.com/pawnkit/pawn-parser/preprocess"
 )
 
 const maxTagAliasDepth = 32
@@ -39,7 +39,7 @@ func expandTagMacros(text string, macros map[string]preprocess.Macro, active map
 			continue
 		}
 		active[name] = true
-		out.WriteString(expandTagMacros(macro.BodyText(), macros, active, depth+1))
+		out.WriteString(expandTagMacros(macro.BodyText, macros, active, depth+1))
 		delete(active, name)
 	}
 	return out.String()

@@ -10,9 +10,9 @@ import (
 	"testing"
 
 	analysis "github.com/pawnkit/pawn-analysis"
-	"github.com/pawnkit/pawn-analysis/preprocess"
 	"github.com/pawnkit/pawn-analysis/sema"
 	"github.com/pawnkit/pawn-analysis/symbol"
+	"github.com/pawnkit/pawn-parser/preprocess"
 	"github.com/pawnkit/pawn-parser/token"
 	"github.com/pawnkit/pawnkit-core/diagnostic"
 	"github.com/pawnkit/pawnkit-core/source"

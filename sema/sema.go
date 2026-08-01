@@ -36,6 +36,11 @@ type CallableResolver interface {
 	ResolveCallable(name string) (Callable, bool)
 }
 
+// TagResolver expands aliases used in tag declarations.
+type TagResolver interface {
+	ResolveTag(tag string) string
+}
+
 // Result contains confirmed diagnostics and unresolved unknowns.
 type Result struct {
 	Diagnostics []diagnostic.Diagnostic

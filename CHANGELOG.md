@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.30.7 - 2026-08-01
+
+### Fixed
+
+- Resolve PawnPlus tag aliases before checking argument compatibility.
+
 ## 0.30.6 - 2026-08-01
 
 ### Performance

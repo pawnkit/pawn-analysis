@@ -62,6 +62,18 @@ func (m Macro) ReplacementCallable() (string, bool) {
 	return "", false
 }
 
+// BodyText returns the replacement tokens as source-like text.
+func (m Macro) BodyText() string {
+	if len(m.Body) == 0 {
+		return ""
+	}
+	parts := make([]string, len(m.Body))
+	for i, tok := range m.Body {
+		parts[i] = tok.text
+	}
+	return strings.Join(parts, " ")
+}
+
 type macroTable struct {
 	byName map[string]Macro
 }

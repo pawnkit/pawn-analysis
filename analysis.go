@@ -949,6 +949,10 @@ func (r nameResolver) ResolveCallable(name string) (sema.Callable, bool) {
 	return sema.Callable{}, false
 }
 
+func (r nameResolver) ResolveTag(tag string) string {
+	return resolveTagMacros(tag, r.macros)
+}
+
 func (r nameResolver) global(name string) (symbol.Symbol, bool) {
 	id, ok := r.globalNames[name]
 	if !ok {

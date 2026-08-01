@@ -294,7 +294,7 @@ func (c *tagChecker) checkPair(node parser.SyntaxNode, leftField, rightField, co
 	}
 	expected, expectedOK := c.tag(left)
 	actual, actualOK := c.tag(right)
-	if expectedOK && actualOK && !tagsCompatible(expected, actual) {
+	if expectedOK && actualOK && !c.tagsCompatible(expected, actual) {
 		c.mismatch(right, expected, actual, context)
 	}
 }
@@ -304,7 +304,7 @@ func (c *tagChecker) checkExpected(node parser.SyntaxNode, expected, context str
 		return
 	}
 	actual, ok := c.tag(node)
-	if ok && !tagsCompatible(expected, actual) {
+	if ok && !c.tagsCompatible(expected, actual) {
 		c.mismatch(node, expected, actual, context)
 	}
 }
@@ -314,18 +314,56 @@ func tagsCompatible(expected, actual string) bool {
 		return true
 	}
 	accepted := make(map[string]struct{})
-	for _, tag := range strings.Split(expected, "|") {
+	for _, tag := range splitTagAlternatives(expected) {
 		if tag == "_" {
 			return true
 		}
 		accepted[tag] = struct{}{}
 	}
-	for _, tag := range strings.Split(actual, "|") {
+	for _, tag := range splitTagAlternatives(actual) {
 		if _, ok := accepted[tag]; ok {
 			return true
 		}
 	}
 	return false
+}
+
+func splitTagAlternatives(text string) []string {
+	text = strings.TrimSpace(text)
+	if len(text) >= 2 && text[0] == '{' && text[len(text)-1] == '}' {
+		text = text[1 : len(text)-1]
+	}
+	var result []string
+	start, depth := 0, 0
+	for i, r := range text {
+		switch r {
+		case '{', '[', '(', '<':
+			depth++
+		case '}', ']', ')', '>':
+			if depth > 0 {
+				depth--
+			}
+		case ',', '|':
+			if depth == 0 {
+				if item := strings.TrimSpace(text[start:i]); item != "" {
+					result = append(result, item)
+				}
+				start = i + 1
+			}
+		}
+	}
+	if item := strings.TrimSpace(text[start:]); item != "" {
+		result = append(result, item)
+	}
+	return result
+}
+
+func (c *tagChecker) tagsCompatible(expected, actual string) bool {
+	if resolver, ok := c.resolver.(TagResolver); ok {
+		expected = resolver.ResolveTag(expected)
+		actual = resolver.ResolveTag(actual)
+	}
+	return tagsCompatible(expected, actual)
 }
 
 func (c *tagChecker) mismatch(node parser.SyntaxNode, expected, actual, context string) {
@@ -439,7 +477,7 @@ func (c *tagChecker) operatorResult(node parser.SyntaxNode) (string, bool) {
 		}
 		matches := true
 		for i := range actual {
-			if !tagsCompatible(overload.ParamTags[i], actual[i]) {
+			if !c.tagsCompatible(overload.ParamTags[i], actual[i]) {
 				matches = false
 				break
 			}

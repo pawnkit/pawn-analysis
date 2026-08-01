@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.30.5 - 2026-08-01
+
+### Performance
+
+- Let editor clients pass the known byte edit and skip a redundant full-file
+  trivia scan for code edits.
+- Index token overlap checks by source offset.
+
 ## 0.30.4 - 2026-08-01
 
 ### Performance

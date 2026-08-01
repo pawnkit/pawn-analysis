@@ -572,6 +572,31 @@ func TestAnalyzePatchesChangedIdentifierReference(t *testing.T) {
 	}
 }
 
+func TestAnalyzeUsesProvidedEdit(t *testing.T) {
+	const revision = "project:1"
+	beforeText := []byte("new first;\nstock Work() { return first; }\n")
+	afterText := []byte("new first;\nstock Work() { return other; }\n")
+	before := analysis.Analyze(beforeText, analysis.Options{Revision: revision})
+	start := bytes.LastIndex(beforeText, []byte("first"))
+	if start < 0 {
+		t.Fatal("missing edit token")
+	}
+	edit := &preprocess.CompatibleEdit{
+		Before: preprocess.ByteRange{Start: start, End: start + len("first")},
+		After:  preprocess.ByteRange{Start: start, End: start + len("other")},
+	}
+	after, err := analysis.AnalyzeContext(context.Background(), afterText, analysis.Options{
+		Previous: before, PreviousEdit: edit, Revision: revision, ReuseCompatibleExpansion: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clean := analysis.Analyze(afterText, analysis.Options{Revision: revision})
+	if !reflect.DeepEqual(after.Diagnostics, clean.Diagnostics) {
+		t.Fatal("provided edit changed diagnostics")
+	}
+}
+
 func TestAnalyzeRebuildsExpandedViewForNonLocalTokenEdit(t *testing.T) {
 	tests := []struct {
 		name   string

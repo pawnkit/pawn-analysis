@@ -2,6 +2,7 @@ package preprocess
 
 import (
 	"context"
+	"sort"
 
 	"github.com/pawnkit/pawn-parser/lexer"
 	"github.com/pawnkit/pawn-parser/token"
@@ -42,6 +43,19 @@ type CompatibleEdit struct {
 	After  ByteRange
 }
 
+// EditTouchesCode reports whether an edit overlaps a non-trivia token.
+func EditTouchesCode(tokens []token.Token, edit CompatibleEdit) bool {
+	index := sort.Search(len(tokens), func(i int) bool {
+		return tokens[i].End.Offset > edit.Before.Start
+	})
+	for ; index < len(tokens) && tokens[index].Start.Offset < edit.Before.End; index++ {
+		if !tokens[index].Kind.IsTrivia() {
+			return true
+		}
+	}
+	return false
+}
+
 // ReuseCompatibleContext retains the dependency graph for a local token edit.
 // Expanded source still contains the previous local body.
 func ReuseCompatibleContext(
@@ -51,10 +65,36 @@ func ReuseCompatibleContext(
 	cache *TokenCache,
 	previous *Result,
 ) (*Result, CompatibleEdit, bool, error) {
+	return reuseCompatibleContext(ctx, src, uri, cache, previous, nil)
+}
+
+// ReuseCompatibleContextWithEdit reuses preprocessing with a known byte edit.
+func ReuseCompatibleContextWithEdit(
+	ctx context.Context,
+	src []byte,
+	uri string,
+	cache *TokenCache,
+	previous *Result,
+	known CompatibleEdit,
+) (*Result, CompatibleEdit, bool, error) {
+	return reuseCompatibleContext(ctx, src, uri, cache, previous, &known)
+}
+
+func reuseCompatibleContext(
+	ctx context.Context,
+	src []byte,
+	uri string,
+	cache *TokenCache,
+	previous *Result,
+	known *CompatibleEdit,
+) (*Result, CompatibleEdit, bool, error) {
 	if previous == nil {
 		return nil, CompatibleEdit{}, false, nil
 	}
 	edit, changed := compatibleEdit(previous.Source, src)
+	if known != nil {
+		edit, changed = *known, true
+	}
 	if !changed || directiveRange(previous.Source, edit.Before) || directiveRange(src, edit.After) {
 		return nil, CompatibleEdit{}, false, nil
 	}
@@ -125,16 +165,11 @@ func reuseSingleTokenEdit(src, previous []byte, edit CompatibleEdit, tokens []to
 		edit.After.Start < 0 || edit.After.End > len(src) {
 		return nil, false
 	}
-	var index = -1
-	for i, current := range tokens {
-		if current.Start.Offset == edit.Before.Start && current.End.Offset == edit.Before.End {
-			if index != -1 {
-				return nil, false
-			}
-			index = i
-		}
-	}
-	if index == -1 {
+	index := sort.Search(len(tokens), func(i int) bool {
+		return tokens[i].Start.Offset >= edit.Before.Start
+	})
+	if index >= len(tokens) || tokens[index].Start.Offset != edit.Before.Start ||
+		tokens[index].End.Offset != edit.Before.End {
 		return nil, false
 	}
 	replacement := src[edit.After.Start:edit.After.End]
@@ -195,10 +230,11 @@ func directiveRange(src []byte, changed ByteRange) bool {
 }
 
 func touchesMacro(tokens []token.Token, src []byte, changed ByteRange, macros map[string]Macro) bool {
-	for _, current := range tokens {
-		if current.End.Offset < changed.Start || current.Start.Offset > changed.End {
-			continue
-		}
+	index := sort.Search(len(tokens), func(i int) bool {
+		return tokens[i].End.Offset >= changed.Start
+	})
+	for ; index < len(tokens) && tokens[index].Start.Offset <= changed.End; index++ {
+		current := tokens[index]
 		if _, macro := macros[current.Text(src)]; macro {
 			return true
 		}

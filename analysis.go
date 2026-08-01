@@ -30,6 +30,8 @@ type Options struct {
 	CollectFunctionFacts bool
 	TokenCache           *preprocess.TokenCache
 	Previous             *Result
+	// PreviousEdit is the byte edit that produced the current source.
+	PreviousEdit *preprocess.CompatibleEdit
 	// ReuseCompatibleExpansion allows editor diagnostics to reuse an unchanged
 	// dependency graph. Expanded source may describe the previous local body.
 	ReuseCompatibleExpansion bool
@@ -97,14 +99,25 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 	var localEdit preprocess.CompatibleEdit
 	localCandidate := false
 	if opts.Previous != nil && opts.Revision != "" && opts.Previous.revision == opts.Revision {
-		pre, reusedTrivia, err = preprocess.ReuseTriviaContext(
-			ctx, text, uri.String(), opts.TokenCache, opts.Previous.Preprocess,
+		tryTrivia := opts.PreviousEdit == nil || opts.Previous.Preprocess == nil || !preprocess.EditTouchesCode(
+			opts.Previous.Preprocess.OriginalTokens, *opts.PreviousEdit,
 		)
-		reusedPreprocess = reusedTrivia
-		if err == nil && !reusedPreprocess && opts.ReuseCompatibleExpansion {
-			pre, localEdit, localCandidate, err = preprocess.ReuseCompatibleContext(
+		if tryTrivia {
+			pre, reusedTrivia, err = preprocess.ReuseTriviaContext(
 				ctx, text, uri.String(), opts.TokenCache, opts.Previous.Preprocess,
 			)
+		}
+		reusedPreprocess = reusedTrivia
+		if err == nil && !reusedPreprocess && opts.ReuseCompatibleExpansion {
+			if opts.PreviousEdit != nil {
+				pre, localEdit, localCandidate, err = preprocess.ReuseCompatibleContextWithEdit(
+					ctx, text, uri.String(), opts.TokenCache, opts.Previous.Preprocess, *opts.PreviousEdit,
+				)
+			} else {
+				pre, localEdit, localCandidate, err = preprocess.ReuseCompatibleContext(
+					ctx, text, uri.String(), opts.TokenCache, opts.Previous.Preprocess,
+				)
+			}
 			reusedPreprocess = localCandidate
 		}
 	}

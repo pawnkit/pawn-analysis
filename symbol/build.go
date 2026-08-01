@@ -232,6 +232,9 @@ func (b *builder) declare(scope ID, sym Symbol) ID {
 	if existingID, ok := sc.Names[sym.Name]; ok {
 		existing, _ := b.table.Symbol(existingID)
 		id := b.appendSymbol(sym)
+		if IsTestEntryPoint(sym) {
+			return id
+		}
 		if isForwardPair(existing.Kind, sym.Kind) {
 			if existing.Kind == KindForward {
 				sc.Names[sym.Name] = id
@@ -250,6 +253,9 @@ func (b *builder) declare(scope ID, sym Symbol) ID {
 		return id
 	}
 	id := b.appendSymbol(sym)
+	if IsTestEntryPoint(sym) {
+		return id
+	}
 	sc.Names[sym.Name] = id
 	return id
 }
@@ -267,14 +273,32 @@ func (b *builder) resolveFileReferences(fileScope ID) {
 		}
 		ref := &b.table.References[i]
 		if ref.Resolved == 0 {
-			ref.Resolved = file.Names[ref.Name]
+			if ref.IsCall {
+				if resolved, ok := b.table.LookupCallable(ref.Scope, ref.Name, ref.ArgCount); ok {
+					ref.Resolved = resolved.ID
+				} else if resolved, ok := b.table.Lookup(ref.Scope, ref.Name); ok {
+					ref.Resolved = resolved.ID
+				}
+			} else {
+				ref.Resolved = file.Names[ref.Name]
+			}
 		}
 	}
 }
 
 func (b *builder) reference(scope ID, name string, span source.Span, isCall bool, argCount int) {
 	ref := Reference{Name: name, Span: span, Scope: scope, IsCall: isCall, ArgCount: argCount}
-	if sym, ok := b.table.Lookup(scope, name); ok {
+	var sym Symbol
+	var ok bool
+	if isCall {
+		sym, ok = b.table.LookupCallable(scope, name, argCount)
+		if !ok {
+			sym, ok = b.table.Lookup(scope, name)
+		}
+	} else {
+		sym, ok = b.table.Lookup(scope, name)
+	}
+	if ok {
 		ref.Resolved = sym.ID
 	}
 	b.table.References = append(b.table.References, ref)

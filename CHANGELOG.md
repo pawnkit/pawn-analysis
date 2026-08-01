@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.30.2 - 2026-08-01
+
+### Fixed
+
+- Keep YSI `Test:` entry points separate from production functions.
+- Resolve calls to the production function when a test shares its name.
+
 ## 0.30.1 - 2026-07-30
 
 ### Fixed

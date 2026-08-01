@@ -65,6 +65,11 @@ func (k Kind) IsCallable() bool {
 	}
 }
 
+// IsTestEntryPoint reports a YSI test function declaration.
+func IsTestEntryPoint(item Symbol) bool {
+	return item.Kind.IsCallable() && item.Tag == "Test"
+}
+
 // OperatorOverloads returns operator declarations with the given normalized name.
 func (t *Table) OperatorOverloads(name string) []Symbol {
 	var result []Symbol
@@ -266,6 +271,34 @@ func (t *Table) Lookup(scope ID, name string) (Symbol, bool) {
 		}
 		if id, ok := sc.Names[name]; ok {
 			return t.Symbol(id)
+		}
+		scope = sc.Parent
+	}
+	return Symbol{}, false
+}
+
+// LookupCallable resolves a call by name and argument count.
+func (t *Table) LookupCallable(scope ID, name string, argCount int) (Symbol, bool) {
+	for scope != 0 {
+		sc, ok := t.Scope(scope)
+		if !ok {
+			return Symbol{}, false
+		}
+		var fallback Symbol
+		for i := range t.Symbols {
+			item := t.Symbols[i]
+			if item.Scope != sc.ID || item.Name != name || !item.Kind.IsCallable() || IsTestEntryPoint(item) {
+				continue
+			}
+			if fallback.ID == 0 {
+				fallback = item
+			}
+			if argCount < 0 || argCount >= item.MinArgs && (item.MaxArgs < 0 || argCount <= item.MaxArgs) {
+				return item, true
+			}
+		}
+		if fallback.ID != 0 {
+			return fallback, true
 		}
 		scope = sc.Parent
 	}

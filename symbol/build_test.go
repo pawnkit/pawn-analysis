@@ -142,6 +142,30 @@ func TestRedeclarationInSameScope(t *testing.T) {
 	}
 }
 
+func TestTaggedTestFunctionDoesNotConflictWithProductionFunction(t *testing.T) {
+	table, _ := buildTable(t, "Test:DefineItemType() { new ItemType:value = DefineItemType(\"a\", \"b\", 1, 1); }\nstock ItemType:DefineItemType(a, b, c, d) { return 1; }\n")
+	if len(table.Diagnostics) != 0 {
+		t.Fatalf("diagnostics = %+v", table.Diagnostics)
+	}
+	var production, test symbol.Symbol
+	for _, item := range table.Symbols {
+		switch {
+		case item.Name == "DefineItemType" && item.Tag == "ItemType":
+			production = item
+		case item.Name == "DefineItemType" && item.Tag == "Test":
+			test = item
+		}
+	}
+	if production.ID == 0 || test.ID == 0 {
+		t.Fatalf("missing production/test symbols: production=%+v test=%+v", production, test)
+	}
+	for _, ref := range table.References {
+		if ref.Name == "DefineItemType" && ref.IsCall && ref.Resolved != production.ID {
+			t.Fatalf("call resolved to %d, want production %d", ref.Resolved, production.ID)
+		}
+	}
+}
+
 func TestScopeShadowing(t *testing.T) {
 	src := "stock Foo(x) { new y = x; { new x = y; x = x + 1; } return x; }\n"
 	table, _ := buildTable(t, src)

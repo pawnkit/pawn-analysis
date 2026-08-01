@@ -155,6 +155,9 @@ func checkControlFlowCached(
 			))
 		}
 		if callable.Tag != "" && callable.Tag != "void" && graph.FallsThrough {
+			if symbol.IsTestEntryPoint(callable) {
+				continue
+			}
 			diagnostics = append(diagnostics, diagnostic.New(
 				"pawn-analysis:sema/missing-return", "pawn-analysis", diagnostic.SeverityWarning,
 				fmt.Sprintf("function %q can finish without returning %s", callable.Name, callable.Tag), callable.Span,

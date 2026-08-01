@@ -67,3 +67,12 @@ func TestControlFlowDiagnostics(t *testing.T) {
 		})
 	}
 }
+
+func TestControlFlowAcceptsTaggedTestFunction(t *testing.T) {
+	text := "stock ItemType:DefineItemType(a, b, c, d) { return 1; } Test:DefineItemType() { new ItemType:value = DefineItemType(\"a\", \"b\", 1, 1); }"
+	file := parseCompact(t, text)
+	_, diagnostics := sema.CheckControlFlow(file.Syntax(), tableFor(t, text))
+	if len(diagnostics) != 0 {
+		t.Fatalf("diagnostics = %+v", diagnostics)
+	}
+}

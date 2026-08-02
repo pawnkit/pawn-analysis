@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.30.9 - 2026-08-02
+
+### Changed
+
+- Use pawn-parser v1.5.8 and its bounded preprocessor implementation.
+
 ## 0.30.8 - 2026-08-01
 
 ### Changed

@@ -250,6 +250,34 @@ func TestAnalyzeReusesExpandedViewForEquivalentTriviaEdit(t *testing.T) {
 	}
 }
 
+func TestAnalyzeReusesDirectFunctionFactsWithExpandedView(t *testing.T) {
+	const revision = "project:1"
+	before := analysis.Analyze(
+		[]byte("stock Work() { return 1; }\n"),
+		analysis.Options{RetainExpanded: true, CollectFunctionFacts: true, Revision: revision},
+	)
+	after, err := analysis.AnalyzeContext(
+		context.Background(),
+		[]byte("stock Work() { return 2; }\n"),
+		analysis.Options{
+			RetainExpanded: true, CollectFunctionFacts: true, Previous: before,
+			Revision: revision, ReuseCompatibleExpansion: true,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.ExpandedParse != before.ExpandedParse || after.ExpandedSymbols != before.ExpandedSymbols {
+		t.Fatal("expanded view was rebuilt")
+	}
+	if after.Reuse.FunctionFacts != len(before.FunctionFacts) || after.Reuse.FunctionFacts == 0 {
+		t.Fatalf("reused function facts = %d, want %d", after.Reuse.FunctionFacts, len(before.FunctionFacts))
+	}
+	if !reflect.DeepEqual(after.FunctionFacts, before.FunctionFacts) {
+		t.Fatal("reused direct facts changed")
+	}
+}
+
 func TestAnalyzeReusesOriginalViewForTriviaEditWithoutCompatibleExpansion(t *testing.T) {
 	uri := source.FileURI("test.pwn")
 	beforeText := []byte("stock Work() { return 1; } // old\n")

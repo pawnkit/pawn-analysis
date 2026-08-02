@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.30.11 - 2026-08-02
+
+### Performance
+
+- Reuse direct function-effect facts when incremental analysis keeps the same
+  expanded syntax and symbol table.
+
 ## 0.30.10 - 2026-08-02
 
 ### Performance

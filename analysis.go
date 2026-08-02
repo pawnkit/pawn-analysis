@@ -40,6 +40,7 @@ type Options struct {
 
 type ReuseStats struct {
 	ControlFlow         int
+	FunctionFacts       int
 	Declarations        int
 	Tags                int
 	CompatibleExpansion bool
@@ -68,6 +69,7 @@ type Result struct {
 	nameResult          sema.Result
 	stateDiagnostics    []diagnostic.Diagnostic
 	orderDiagnostics    []diagnostic.Diagnostic
+	directFunctionFacts map[symbol.ID]sema.FunctionFacts
 	reuseLocalSemantics bool
 	revision            string
 }
@@ -738,26 +740,45 @@ func CompleteContext(ctx context.Context, prepared *Result, opts Options) (*Resu
 	result.orderDiagnostics = orderDiagnostics
 	if opts.CollectFunctionFacts {
 		factsFile, factsTable := result.Parse, result.Symbols
-		var direct map[symbol.ID]sema.FunctionFacts
-		if result.ExpandedParse != nil && result.ExpandedSymbols != nil {
+		expandedFacts := result.ExpandedParse != nil && result.ExpandedSymbols != nil
+		if expandedFacts {
 			factsFile, factsTable = result.ExpandedParse, result.ExpandedSymbols
-			direct = sema.BuildMappedFunctionFacts(
-				factsFile,
-				factsTable,
-				result.Preprocess.ExpandedTokens,
-				expandedSpanMapper(result.Preprocess.ExpandedTokens, func(index uint32) source.FileID {
-					if int(index) < len(result.Preprocess.Files) {
-						uri := source.URI(result.Preprocess.Files[index].URI)
-						if id, ok := result.Registry.Lookup(uri); ok {
-							return id
-						}
-					}
-					return result.File
-				}),
-			)
-		} else {
-			direct = sema.BuildFunctionFacts(factsFile, factsTable)
 		}
+		var direct map[symbol.ID]sema.FunctionFacts
+		var previousFactsFile *parser.CompactFile
+		var previousFactsTable *symbol.Table
+		if opts.Previous != nil {
+			previousFactsFile, previousFactsTable = opts.Previous.Parse, opts.Previous.Symbols
+			if opts.Previous.ExpandedParse != nil && opts.Previous.ExpandedSymbols != nil {
+				previousFactsFile, previousFactsTable = opts.Previous.ExpandedParse, opts.Previous.ExpandedSymbols
+			}
+		}
+		if opts.Previous != nil && factsFile == previousFactsFile &&
+			factsTable == previousFactsTable && opts.Previous.directFunctionFacts != nil {
+			direct = opts.Previous.directFunctionFacts
+			result.Reuse.FunctionFacts = len(direct)
+		}
+		if direct == nil {
+			if expandedFacts {
+				direct = sema.BuildMappedFunctionFacts(
+					factsFile,
+					factsTable,
+					result.Preprocess.ExpandedTokens,
+					expandedSpanMapper(result.Preprocess.ExpandedTokens, func(index uint32) source.FileID {
+						if int(index) < len(result.Preprocess.Files) {
+							uri := source.URI(result.Preprocess.Files[index].URI)
+							if id, ok := result.Registry.Lookup(uri); ok {
+								return id
+							}
+						}
+						return result.File
+					}),
+				)
+			} else {
+				direct = sema.BuildFunctionFacts(factsFile, factsTable)
+			}
+		}
+		result.directFunctionFacts = direct
 		var callEffects sema.CallEffectResolver
 		if resolver, ok := opts.Names.(sema.CallEffectResolver); ok {
 			callEffects = resolver

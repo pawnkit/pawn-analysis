@@ -85,6 +85,7 @@ func buildFunctionFacts(
 	for _, reference := range table.References {
 		references[reference.Span] = reference
 	}
+	staticFunctions := staticFunctionScopes(table)
 	result := make(map[symbol.ID]FunctionFacts)
 	declarations := file.Syntax().Declarations()
 	for declarations.Next() {
@@ -115,7 +116,7 @@ func buildFunctionFacts(
 			}
 		} else {
 			result[declared.ID] = collectFunctionFacts(
-				function, declared, table, references, spanOf, hasReferenceMark,
+				function, declared, table, references, spanOf, hasReferenceMark, staticFunctions,
 			)
 		}
 	}
@@ -262,6 +263,7 @@ func collectFunctionFacts(
 	references map[source.Span]symbol.Reference,
 	spanOf func(parser.SyntaxNode) (source.Span, bool),
 	hasReferenceMark func(parser.ByteRange) bool,
+	staticFunctions map[symbol.ID]struct{},
 ) FunctionFacts {
 	facts := FunctionFacts{Complete: !function.HasError()}
 	parameters := functionParameters(function, table, spanOf, hasReferenceMark)
@@ -270,11 +272,7 @@ func collectFunctionFacts(
 	mutated := make(map[int]struct{})
 	calls := make(map[symbol.ID]struct{})
 
-	for _, item := range table.Symbols {
-		if item.IsStatic && scopeWithin(table, item.Scope, declared.FuncScope) {
-			facts.IntrinsicImpure = true
-		}
-	}
+	_, facts.IntrinsicImpure = staticFunctions[declared.FuncScope]
 	var visit func(parser.SyntaxNode, []parser.SyntaxNode)
 	visit = func(node parser.SyntaxNode, parents []parser.SyntaxNode) {
 		switch node.Kind() {
@@ -311,6 +309,27 @@ func collectFunctionFacts(
 	facts.Calls = sortedIDs(calls)
 	facts.Parameters, facts.ReferenceParameters = orderedParameters(parameters)
 	return facts
+}
+
+func staticFunctionScopes(table *symbol.Table) map[symbol.ID]struct{} {
+	result := make(map[symbol.ID]struct{})
+	for _, item := range table.Symbols {
+		if !item.IsStatic {
+			continue
+		}
+		for scope := item.Scope; scope != 0; {
+			current, ok := table.Scope(scope)
+			if !ok {
+				break
+			}
+			if current.Kind == symbol.ScopeFunction {
+				result[scope] = struct{}{}
+				break
+			}
+			scope = current.Parent
+		}
+	}
+	return result
 }
 
 type parameterFact struct {
@@ -512,20 +531,6 @@ func accessFor(node parser.SyntaxNode, parents []parser.SyntaxNode) referenceAcc
 func contains(container, node parser.SyntaxNode) bool {
 	outer, inner := container.Range(), node.Range()
 	return inner.Start >= outer.Start && inner.End <= outer.End
-}
-
-func scopeWithin(table *symbol.Table, scope, parent symbol.ID) bool {
-	for scope != 0 {
-		if scope == parent {
-			return true
-		}
-		current, ok := table.Scope(scope)
-		if !ok {
-			return false
-		}
-		scope = current.Parent
-	}
-	return false
 }
 
 func compactRangeHasToken(tokens []parser.CompactToken, within parser.ByteRange, kind token.Kind) bool {

@@ -68,6 +68,24 @@ func TestBuildFunctionFactsMarksUnknownCallsIncomplete(t *testing.T) {
 	}
 }
 
+func TestBuildFunctionFactsMarksStaticLocalsImpure(t *testing.T) {
+	t.Parallel()
+
+	text := []byte(`
+stock Cached() { static value; return value; }
+stock Plain() { new value; return value; }
+`)
+	file := parser.ParseCompact(text, parser.ParseOptions{})
+	table := symbol.Build(file.Syntax(), source.FileID(1))
+	facts := sema.BuildFunctionFacts(file, table)
+	if !facts[symbolByName(t, table, "Cached").ID].IntrinsicImpure {
+		t.Fatal("static local did not mark function impure")
+	}
+	if facts[symbolByName(t, table, "Plain").ID].IntrinsicImpure {
+		t.Fatal("ordinary local marked function impure")
+	}
+}
+
 func TestResolveFunctionFactsUsesExternalEffects(t *testing.T) {
 	t.Parallel()
 

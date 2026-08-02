@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.30.10 - 2026-08-02
+
+### Performance
+
+- Index static function scopes once while collecting function effects.
+
 ## 0.30.9 - 2026-08-02
 
 ### Changed

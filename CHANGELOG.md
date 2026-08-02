@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.30.12 - 2026-08-02
+
+### Changed
+
+- Use pawn-parser v1.5.9.
+
 ## 0.30.11 - 2026-08-02
 
 ### Performance

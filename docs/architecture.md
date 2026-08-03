@@ -30,9 +30,10 @@ exclude unrelated files from name resolution.
 
 Top-level declarations have stable IDs based on their signatures, not source
 offsets or function bodies. Snapshot updates use them to reuse non-trivial
-CFGs. Small graphs are cheaper to rebuild. Function edits invalidate their own
-CFG. Changes to resolved global constants invalidate every CFG because they
-can change conditional control flow.
+CFGs and name checks. Small graphs and short functions are cheaper to rebuild.
+Function edits invalidate their own cached results. Changes to resolved global
+constants invalidate every CFG because they can change conditional control
+flow.
 
 Stable IDs are available through `symbol.Table.StableSymbolID`. They are not
 stored on local symbols. `symbol.Table.ExportFingerprint` computes the matching
@@ -40,11 +41,11 @@ file-level fingerprint. Both indexes are lazy.
 
 ## Invalidation
 
-Function-body edits may reuse the include graph, unchanged tag checks, and
-unchanged CFGs. Edits that keep the same token kinds and positions also reuse
-the original syntax tree. Function edits that do not touch identifiers also
-reuse the symbol table. Macro calls are indexed during preprocessing so this
-check does not scan the expanded token stream.
+Function-body edits may reuse the include graph, unchanged name and tag checks,
+and unchanged CFGs. Edits that keep the same token kinds and positions also
+reuse the original syntax tree. Function edits that do not touch identifiers
+also reuse the symbol table. Macro calls are indexed during preprocessing so
+this check does not scan the expanded token stream.
 
 Compatible body edits reuse preprocessing even when the expanded source is
 small. The same invalidation checks apply to single-file and include-heavy
@@ -66,7 +67,8 @@ The following changes force wider work:
 - Macro definitions and conditional directives rebuild preprocessing.
 - Include content changes require a new resolver revision.
 - Profile defines and API data require a new analysis revision.
-- Exported declarations invalidate resolver-dependent semantic results.
+- Exported declarations invalidate resolver-dependent semantic results and
+  function caches.
 - Resolved global constant changes invalidate every CFG.
 
 When an edit cannot be classified safely, analysis falls back to a clean run.

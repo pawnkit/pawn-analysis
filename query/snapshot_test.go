@@ -134,6 +134,9 @@ func TestSnapshotReusesUnchangedFunctionControlFlow(t *testing.T) {
 	if got.Reuse.Tags != 1 {
 		t.Fatalf("reused tag checks = %d, want 1", got.Reuse.Tags)
 	}
+	if got.Reuse.Names != 1 {
+		t.Fatalf("reused name checks = %d, want 1", got.Reuse.Names)
+	}
 
 	clean, err := New(Document{URI: uri, Text: secondText, Version: 2}).Analyze(
 		context.Background(), uri, analysis.Options{},

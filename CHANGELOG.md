@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.30.21 - 2026-08-03
+
+### Performance
+
+- Cache name and arity checks for unchanged function bodies during incremental analysis.
+
 ## 0.30.20 - 2026-08-03
 
 ### Performance

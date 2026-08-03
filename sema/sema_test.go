@@ -3,6 +3,7 @@ package sema_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -143,5 +144,52 @@ func TestExternalCallArgumentCount(t *testing.T) {
 	result := sema.CheckNames(tableFor(t, "main() { Native(); }"), resolver)
 	if len(result.Diagnostics) != 1 || result.Diagnostics[0].Code != "pawn-analysis:sema/argument-count" {
 		t.Fatalf("diagnostics: %+v", result.Diagnostics)
+	}
+}
+
+func TestCheckNamesCachedReusesUnchangedFunction(t *testing.T) {
+	const calls = 20
+	beforeText := fmt.Sprintf(
+		"stock Stable() { %s }\nstock Changed() { %s }",
+		strings.Repeat("MissingStable();", calls), strings.Repeat("MissingChanged();", calls),
+	)
+	afterText := fmt.Sprintf(
+		"stock Stable() { %s }\nstock Changed() { %s }",
+		strings.Repeat("MissingStable();", calls), strings.Repeat("MissingOther();", calls),
+	)
+
+	before := parseCompact(t, beforeText)
+	beforeTable := symbol.Build(before.Syntax(), source.FileID(1))
+	beforeIndex := parser.BuildDeclarationIndex(before)
+	_, cache, _, err := sema.CheckNamesCachedIndexedContext(
+		context.Background(), before.Syntax(), beforeTable, sema.MapResolver{}, nil, "revision", beforeIndex,
+	)
+	if err != nil {
+		t.Fatalf("initial check: %v", err)
+	}
+
+	after := parseCompact(t, afterText)
+	afterTable := symbol.Build(after.Syntax(), source.FileID(1))
+	afterIndex := parser.BuildDeclarationIndex(after)
+	got, _, reused, err := sema.CheckNamesCachedIndexedContext(
+		context.Background(), after.Syntax(), afterTable, sema.MapResolver{}, cache, "revision", afterIndex,
+	)
+	if err != nil {
+		t.Fatalf("incremental check: %v", err)
+	}
+	if reused != 1 {
+		t.Fatalf("reused functions = %d, want 1", reused)
+	}
+
+	want := sema.CheckNames(afterTable, sema.MapResolver{})
+	if len(got.Diagnostics) != len(want.Diagnostics) {
+		t.Fatalf("diagnostics = %d, want %d", len(got.Diagnostics), len(want.Diagnostics))
+	}
+	for i := range got.Diagnostics {
+		if got.Diagnostics[i].Code != want.Diagnostics[i].Code ||
+			got.Diagnostics[i].Message != want.Diagnostics[i].Message ||
+			got.Diagnostics[i].Primary != want.Diagnostics[i].Primary {
+			t.Fatalf("diagnostic %d = %+v, want %+v", i, got.Diagnostics[i], want.Diagnostics[i])
+		}
 	}
 }

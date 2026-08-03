@@ -68,9 +68,28 @@ func checkNames(ctx context.Context, cancellable bool, table *symbol.Table, reso
 	if table == nil {
 		return result, nil
 	}
+	return checkNameReferences(ctx, cancellable, table, resolver, table.References)
+}
+
+func checkNameReferences(
+	ctx context.Context,
+	cancellable bool,
+	table *symbol.Table,
+	resolver Resolver,
+	references []symbol.Reference,
+) (Result, error) {
+	var result Result
+	if cancellable {
+		if err := ctx.Err(); err != nil {
+			return result, err
+		}
+	}
+	if table == nil {
+		return result, nil
+	}
 
 	cancel := cancellation{ctx: ctx, cancellable: cancellable}
-	for _, ref := range table.References {
+	for _, ref := range references {
 		if cancel.poll() {
 			return Result{}, cancel.err
 		}

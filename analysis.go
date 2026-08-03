@@ -42,6 +42,7 @@ type ReuseStats struct {
 	ControlFlow         int
 	FunctionFacts       int
 	Declarations        int
+	Names               int
 	Tags                int
 	CompatibleExpansion bool
 	RebasedSyntax       bool
@@ -66,6 +67,7 @@ type Result struct {
 	baseDiagnostics     []diagnostic.Diagnostic
 	flowCache           *sema.FlowCache
 	tagCache            *sema.TagCache
+	nameCache           *sema.NameCache
 	nameResult          sema.Result
 	stateDiagnostics    []diagnostic.Diagnostic
 	orderDiagnostics    []diagnostic.Diagnostic
@@ -679,15 +681,31 @@ func CompleteContext(ctx context.Context, prepared *Result, opts Options) (*Resu
 	resolver := newNameResolver(prepared.Preprocess.Macros, prepared.ExpandedSymbols, opts.Names)
 	stage := beginStage(opts.Trace, StageSemanticNames)
 	semantics := sema.Result{}
+	var nameCache *sema.NameCache
+	reusedNames := 0
 	if prepared.reuseLocalSemantics {
 		semantics = opts.Previous.nameResult
 		semantics.Diagnostics = append([]diagnostic.Diagnostic(nil), semantics.Diagnostics...)
 		semantics.Unknown = append([]symbol.Reference(nil), semantics.Unknown...)
+		nameCache = opts.Previous.nameCache
+		reusedNames = 1
 		stage.end(ctx, 1)
 	} else {
 		var err error
-		semantics, err = sema.CheckNamesContext(ctx, prepared.Symbols, resolver)
-		stage.end(ctx, 0)
+		if prepared.Declarations.Reliable() {
+			var previousNames *sema.NameCache
+			if reusableDeclarations(prepared, opts.Previous) {
+				previousNames = opts.Previous.nameCache
+			}
+			semantics, nameCache, reusedNames, err = sema.CheckNamesCachedIndexedContext(
+				ctx,
+				prepared.Parse.Syntax(), prepared.Symbols, resolver,
+				previousNames, opts.Revision, prepared.Declarations,
+			)
+		} else {
+			semantics, err = sema.CheckNamesContext(ctx, prepared.Symbols, resolver)
+		}
+		stage.end(ctx, reusedNames)
 		if err != nil {
 			return nil, err
 		}
@@ -761,9 +779,11 @@ func CompleteContext(ctx context.Context, prepared *Result, opts Options) (*Resu
 	result.Semantics = semantics
 	result.ControlFlow = flows
 	result.Reuse.ControlFlow = reused
+	result.Reuse.Names = reusedNames
 	result.Reuse.Tags = reusedTags
 	result.flowCache = flowCache
 	result.tagCache = tagCache
+	result.nameCache = nameCache
 	result.nameResult = nameResult
 	result.stateDiagnostics = stateDiagnostics
 	result.orderDiagnostics = orderDiagnostics

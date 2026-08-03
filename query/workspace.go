@@ -188,7 +188,7 @@ func (r *workspaceResolver) add(table *symbol.Table) {
 		}
 		if item.Kind.IsCallable() {
 			r.names[item.Name] = sema.Callable{
-				ReturnTag: item.Tag, ParamTags: append([]string(nil), item.ParamTags...),
+				ReturnTag: item.Tag, ParamTags: item.ParamTags,
 				MinArgs: item.MinArgs, MaxArgs: item.MaxArgs,
 			}
 		} else {

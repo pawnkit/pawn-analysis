@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.30.20 - 2026-08-03
+
+### Performance
+
+- Reuse immutable callable parameter tags while building workspace resolvers.
+
 ## 0.30.19 - 2026-08-03
 
 ### Performance

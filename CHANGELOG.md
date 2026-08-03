@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.30.19 - 2026-08-03
+
+### Performance
+
+- Reuse the prepared analysis options hash across workspace documents.
+
 ## 0.30.18 - 2026-08-03
 
 ### Performance

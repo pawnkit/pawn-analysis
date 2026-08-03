@@ -128,12 +128,18 @@ func (s *Snapshot) Analyze(ctx context.Context, uri source.URI, opts analysis.Op
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	return s.analyze(ctx, uri, opts, optionsHash(opts))
+}
+
+func (s *Snapshot) analyze(ctx context.Context, uri source.URI, opts analysis.Options, optionKey [32]byte) (*analysis.Result, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	document, ok := s.docs[uri]
 	if !ok {
 		return nil, ErrDocumentNotFound
 	}
 	opts.URI = uri
-	optionKey := optionsHash(opts)
 	key := cacheKey{uri: uri, version: document.Version, options: optionKey}
 	s.mu.Lock()
 	result := s.cache[key]

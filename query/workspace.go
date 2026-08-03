@@ -57,11 +57,12 @@ func (s *Snapshot) AnalyzeDocuments(ctx context.Context, uris []source.URI, opts
 
 	resolver := newWorkspaceResolver(opts.Names)
 	prepared := make(map[source.URI]*analysis.Result, len(uris))
+	indexOpts := opts
+	indexOpts.RetainExpanded = true
+	indexOpts.SkipSemantics = true
+	indexOptionsHash := optionsHash(indexOpts)
 	for _, uri := range uris {
-		indexOpts := opts
-		indexOpts.RetainExpanded = true
-		indexOpts.SkipSemantics = true
-		result, err := s.Analyze(ctx, uri, indexOpts)
+		result, err := s.analyze(ctx, uri, indexOpts, indexOptionsHash)
 		if err != nil {
 			return nil, err
 		}

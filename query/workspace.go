@@ -74,6 +74,7 @@ func (s *Snapshot) AnalyzeDocuments(ctx context.Context, uris []source.URI, opts
 	}
 
 	workspace := &WorkspaceResult{Files: make(map[source.URI]*analysis.Result, len(uris))}
+	baseOptions := optionsHash(opts)
 	for _, uri := range uris {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -84,7 +85,7 @@ func (s *Snapshot) AnalyzeDocuments(ctx context.Context, uris []source.URI, opts
 		document := s.docs[uri]
 		key := cacheKey{
 			uri: uri, version: document.Version,
-			options: completeOptionsHash(fileOpts, resolver.fingerprint()),
+			options: completeOptionsHash(baseOptions, resolver.fingerprint()),
 		}
 		s.mu.Lock()
 		result := s.complete[key]
@@ -109,8 +110,7 @@ func (s *Snapshot) AnalyzeDocuments(ctx context.Context, uris []source.URI, opts
 	return workspace, nil
 }
 
-func completeOptionsHash(opts analysis.Options, resolver [32]byte) [32]byte {
-	base := optionsHash(opts)
+func completeOptionsHash(base [32]byte, resolver [32]byte) [32]byte {
 	hash := sha256.New()
 	hash.Write(base[:])
 	hash.Write(resolver[:])

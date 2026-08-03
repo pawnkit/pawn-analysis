@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.30.18 - 2026-08-03
+
+### Performance
+
+- Hash completion options once per workspace snapshot instead of once per
+  document.
+
 ## 0.30.17 - 2026-08-03
 
 ### Performance

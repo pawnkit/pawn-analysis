@@ -28,6 +28,42 @@ func TestSnapshotCachesUnchangedAnalysis(t *testing.T) {
 	}
 }
 
+func TestSnapshotCachesWorkspaceCompletions(t *testing.T) {
+	mainURI := source.FileURI("main.pwn")
+	helperURI := source.FileURI("helper.inc")
+	snapshot := New(
+		Document{URI: mainURI, Text: []byte("main() { Helper(); }\n"), Version: 1},
+		Document{URI: helperURI, Text: []byte("stock Helper() {}\n"), Version: 1},
+	)
+	first, err := snapshot.AnalyzeWorkspace(context.Background(), analysis.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repeated, err := snapshot.AnalyzeWorkspace(context.Background(), analysis.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Files[mainURI] != repeated.Files[mainURI] || first.Files[helperURI] != repeated.Files[helperURI] {
+		t.Fatal("unchanged workspace completion was rebuilt")
+	}
+	next, ok := snapshot.Update(Document{
+		URI: helperURI, Text: []byte("stock Helper() { return 1; }\n"), Version: 2,
+	})
+	if !ok {
+		t.Fatal("update rejected")
+	}
+	second, err := next.AnalyzeWorkspace(context.Background(), analysis.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Files[mainURI] != second.Files[mainURI] {
+		t.Fatal("unchanged workspace completion was rebuilt")
+	}
+	if first.Files[helperURI] == second.Files[helperURI] {
+		t.Fatal("changed workspace completion was reused")
+	}
+}
+
 func TestSnapshotSeparatesPreparedAndCompleteResults(t *testing.T) {
 	uri := source.FileURI("main.pwn")
 	snapshot := New(Document{URI: uri, Text: []byte("main() { Missing(); }\n"), Version: 1})

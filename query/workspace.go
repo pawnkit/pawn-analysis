@@ -2,6 +2,8 @@ package query
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
 	"sort"
 
 	analysis "github.com/pawnkit/pawn-analysis"
@@ -79,9 +81,27 @@ func (s *Snapshot) AnalyzeDocuments(ctx context.Context, uris []source.URI, opts
 		fileOpts := opts
 		fileOpts.URI = uri
 		fileOpts.Names = resolver
-		result, err := analysis.CompleteContext(ctx, prepared[uri], fileOpts)
-		if err != nil {
-			return nil, err
+		document := s.docs[uri]
+		key := cacheKey{
+			uri: uri, version: document.Version,
+			options: completeOptionsHash(fileOpts, resolver.fingerprint()),
+		}
+		s.mu.Lock()
+		result := s.complete[key]
+		s.mu.Unlock()
+		if result == nil {
+			var err error
+			result, err = analysis.CompleteContext(ctx, prepared[uri], fileOpts)
+			if err != nil {
+				return nil, err
+			}
+			s.mu.Lock()
+			if existing := s.complete[key]; existing != nil {
+				result = existing
+			} else {
+				s.complete[key] = result
+			}
+			s.mu.Unlock()
 		}
 		workspace.Files[uri] = result
 		workspace.Diagnostics = append(workspace.Diagnostics, result.Diagnostics...)
@@ -89,10 +109,60 @@ func (s *Snapshot) AnalyzeDocuments(ctx context.Context, uris []source.URI, opts
 	return workspace, nil
 }
 
+func completeOptionsHash(opts analysis.Options, resolver [32]byte) [32]byte {
+	base := optionsHash(opts)
+	hash := sha256.New()
+	hash.Write(base[:])
+	hash.Write(resolver[:])
+	var result [32]byte
+	copy(result[:], hash.Sum(nil))
+	return result
+}
+
 type workspaceResolver struct {
 	names    map[string]sema.Callable
 	nonCalls map[string]struct{}
 	fallback sema.Resolver
+}
+
+func (r *workspaceResolver) fingerprint() [32]byte {
+	hash := sha256.New()
+	var size [8]byte
+	write := func(value string) {
+		binary.LittleEndian.PutUint64(size[:], uint64(len(value)))
+		hash.Write(size[:])
+		hash.Write([]byte(value))
+	}
+	callables := make([]string, 0, len(r.names))
+	for name := range r.names {
+		callables = append(callables, name)
+	}
+	sort.Strings(callables)
+	for _, name := range callables {
+		callable := r.names[name]
+		hash.Write([]byte{1})
+		write(name)
+		write(callable.ReturnTag)
+		binary.LittleEndian.PutUint64(size[:], uint64(callable.MinArgs))
+		hash.Write(size[:])
+		binary.LittleEndian.PutUint64(size[:], uint64(callable.MaxArgs))
+		hash.Write(size[:])
+		for _, tag := range callable.ParamTags {
+			write(tag)
+		}
+	}
+	names := make([]string, 0, len(r.nonCalls))
+	for name := range r.nonCalls {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		hash.Write([]byte{2})
+		write(name)
+	}
+	var result [32]byte
+	copy(result[:], hash.Sum(nil))
+	return result
 }
 
 func newWorkspaceResolver(fallback sema.Resolver) *workspaceResolver {

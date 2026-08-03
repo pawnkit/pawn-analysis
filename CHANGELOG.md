@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.30.14 - 2026-08-03
+
+### Performance
+
+- Cache completed workspace results for unchanged documents.
+- Include exported workspace declarations in the completion cache key.
+
 ## 0.30.13 - 2026-08-03
 
 ### Performance

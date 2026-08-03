@@ -25,10 +25,11 @@ type Document struct {
 
 // Snapshot is an immutable set of versioned documents.
 type Snapshot struct {
-	mu    sync.Mutex
-	docs  map[source.URI]Document
-	cache map[cacheKey]*analysis.Result
-	prior map[reuseKey]*analysis.Result
+	mu       sync.Mutex
+	docs     map[source.URI]Document
+	cache    map[cacheKey]*analysis.Result
+	complete map[cacheKey]*analysis.Result
+	prior    map[reuseKey]*analysis.Result
 }
 
 type cacheKey struct {
@@ -45,7 +46,7 @@ type reuseKey struct {
 func New(documents ...Document) *Snapshot {
 	s := &Snapshot{
 		docs: make(map[source.URI]Document), cache: make(map[cacheKey]*analysis.Result),
-		prior: make(map[reuseKey]*analysis.Result),
+		complete: make(map[cacheKey]*analysis.Result), prior: make(map[reuseKey]*analysis.Result),
 	}
 	for _, document := range documents {
 		s.docs[document.URI] = cloneDocument(document)
@@ -76,7 +77,7 @@ func (s *Snapshot) update(document Document, cloneText bool) (*Snapshot, bool) {
 	}
 	next := &Snapshot{
 		docs: make(map[source.URI]Document, len(s.docs)+1), cache: make(map[cacheKey]*analysis.Result),
-		prior: make(map[reuseKey]*analysis.Result),
+		complete: make(map[cacheKey]*analysis.Result), prior: make(map[reuseKey]*analysis.Result),
 	}
 	for uri, current := range s.docs {
 		next.docs[uri] = current
@@ -94,6 +95,11 @@ func (s *Snapshot) update(document Document, cloneText bool) (*Snapshot, bool) {
 			next.prior[reuseKey{uri: key.uri, options: key.options}] = result
 		}
 	}
+	for key, result := range s.complete {
+		if key.uri != document.URI {
+			next.complete[key] = result
+		}
+	}
 	s.mu.Unlock()
 	return next, true
 }
@@ -101,7 +107,7 @@ func (s *Snapshot) update(document Document, cloneText bool) (*Snapshot, bool) {
 func newOwned(documents ...Document) *Snapshot {
 	s := &Snapshot{
 		docs: make(map[source.URI]Document), cache: make(map[cacheKey]*analysis.Result),
-		prior: make(map[reuseKey]*analysis.Result),
+		complete: make(map[cacheKey]*analysis.Result), prior: make(map[reuseKey]*analysis.Result),
 	}
 	for _, document := range documents {
 		s.docs[document.URI] = document
@@ -174,6 +180,9 @@ func optionsHash(opts analysis.Options) [32]byte {
 	}
 	if opts.ReuseCompatibleExpansion {
 		hash.Write([]byte{3})
+	}
+	if opts.CollectFunctionFacts {
+		hash.Write([]byte{4})
 	}
 	binary.LittleEndian.PutUint64(size[:], uint64(opts.MaxOutputTokens))
 	hash.Write(size[:])

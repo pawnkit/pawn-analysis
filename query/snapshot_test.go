@@ -64,6 +64,45 @@ func TestSnapshotCachesWorkspaceCompletions(t *testing.T) {
 	}
 }
 
+func TestSnapshotReusesChangedWorkspaceSemantics(t *testing.T) {
+	mainURI := source.FileURI("main.pwn")
+	helperURI := source.FileURI("helper.inc")
+	initial := []Document{
+		{URI: mainURI, Text: []byte("stock First() { new value = 1; return value; }\nstock Second(value) { new result = value; result++; result++; result++; result++; result++; result++; result++; result++; result++; result++; return result; }\n"), Version: 1},
+		{URI: helperURI, Text: []byte("stock Helper() { return 1; }\n"), Version: 1},
+	}
+	snapshot := New(initial...)
+	if _, err := snapshot.AnalyzeWorkspace(context.Background(), analysis.Options{}); err != nil {
+		t.Fatal(err)
+	}
+
+	next, ok := snapshot.Update(Document{
+		URI:     mainURI,
+		Text:    []byte("stock First() { new value = 2; return value; }\nstock Second(value) { new result = value; result++; result++; result++; result++; result++; result++; result++; result++; result++; result++; return result; }\n"),
+		Version: 2,
+	})
+	if !ok {
+		t.Fatal("update rejected")
+	}
+	result, err := next.AnalyzeWorkspace(context.Background(), analysis.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Files[mainURI].Reuse.Names == 0 {
+		t.Fatal("changed workspace document did not reuse semantic checks")
+	}
+	clean, err := New(
+		Document{URI: mainURI, Text: []byte("stock First() { new value = 2; return value; }\nstock Second(value) { new result = value; result++; result++; result++; result++; result++; result++; result++; result++; result++; result++; return result; }\n"), Version: 2},
+		initial[1],
+	).AnalyzeWorkspace(context.Background(), analysis.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(summarizeWorkspace(result), summarizeWorkspace(clean)) {
+		t.Fatal("changed workspace reuse differs from clean analysis")
+	}
+}
+
 func TestSnapshotSeparatesPreparedAndCompleteResults(t *testing.T) {
 	uri := source.FileURI("main.pwn")
 	snapshot := New(Document{URI: uri, Text: []byte("main() { Missing(); }\n"), Version: 1})

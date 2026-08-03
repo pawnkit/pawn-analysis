@@ -683,7 +683,8 @@ func CompleteContext(ctx context.Context, prepared *Result, opts Options) (*Resu
 	semantics := sema.Result{}
 	var nameCache *sema.NameCache
 	reusedNames := 0
-	if prepared.reuseLocalSemantics {
+	canReuseLocal := prepared.reuseLocalSemantics && opts.Previous != nil
+	if canReuseLocal {
 		semantics = opts.Previous.nameResult
 		semantics.Diagnostics = append([]diagnostic.Diagnostic(nil), semantics.Diagnostics...)
 		semantics.Unknown = append([]symbol.Reference(nil), semantics.Unknown...)
@@ -736,7 +737,7 @@ func CompleteContext(ctx context.Context, prepared *Result, opts Options) (*Resu
 	semantics.Diagnostics = append(semantics.Diagnostics, tagDiagnostics...)
 	stage = beginStage(opts.Trace, StageSemanticStates)
 	var stateDiagnostics []diagnostic.Diagnostic
-	if prepared.reuseLocalSemantics {
+	if canReuseLocal {
 		stateDiagnostics = opts.Previous.stateDiagnostics
 		stage.end(ctx, 1)
 	} else {
@@ -749,7 +750,7 @@ func CompleteContext(ctx context.Context, prepared *Result, opts Options) (*Resu
 	semantics.Diagnostics = append(semantics.Diagnostics, stateDiagnostics...)
 	stage = beginStage(opts.Trace, StageSemanticOrder)
 	var orderDiagnostics []diagnostic.Diagnostic
-	if prepared.reuseLocalSemantics {
+	if canReuseLocal {
 		orderDiagnostics = opts.Previous.orderDiagnostics
 		stage.end(ctx, 1)
 	} else {

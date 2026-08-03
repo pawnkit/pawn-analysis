@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.30.22 - 2026-08-03
+
+### Performance
+
+- Reuse completed semantic results when a workspace document changes.
+
 ## 0.30.21 - 2026-08-03
 
 ### Performance

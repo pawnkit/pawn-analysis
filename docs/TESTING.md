@@ -12,7 +12,7 @@ The suite uses a sibling `pawn-corpus` checkout when present. Set
 `PAWN_CORPUS_DIR` when it lives elsewhere. Shared cases stay in the corpus;
 small package-level regressions stay here.
 
-Bug fixes need a small regression case. Preprocessor changes should cover malformed input, nesting limits, and source provenance. Cache changes should test clean-result agreement, cancellation, revisions, and concurrent reads.
+Bug fixes need a small regression case. Preprocessor changes should cover malformed input, nesting limits, and source provenance. Cache changes should test clean-result agreement, cancellation, revisions, workspace updates, and concurrent reads.
 
 Golden files never update themselves in CI. External fixtures must record their origin, licence, and pinned version or commit.
 

@@ -92,6 +92,7 @@ func (s *Snapshot) AnalyzeDocuments(ctx context.Context, uris []source.URI, opts
 		result := s.complete[key]
 		s.mu.Unlock()
 		if result == nil {
+			fileOpts.Previous = s.priorComplete[reuseKey{uri: uri, options: key.options}]
 			var err error
 			result, err = analysis.CompleteContext(ctx, prepared[uri], fileOpts)
 			if err != nil {

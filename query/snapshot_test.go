@@ -64,6 +64,43 @@ func TestSnapshotCachesWorkspaceCompletions(t *testing.T) {
 	}
 }
 
+func TestSnapshotReusesWorkspaceResolverForBodyEdit(t *testing.T) {
+	mainURI := source.FileURI("main.pwn")
+	helperURI := source.FileURI("helper.inc")
+	opts := analysis.Options{Revision: "workspace-cache", ReuseCompatibleExpansion: true}
+	snapshot := New(
+		Document{URI: mainURI, Text: []byte("main() { Helper(); return 1; }\n"), Version: 1},
+		Document{URI: helperURI, Text: []byte("stock Helper() {}\n"), Version: 1},
+	)
+	if _, err := snapshot.AnalyzeWorkspace(context.Background(), opts); err != nil {
+		t.Fatal(err)
+	}
+	key := workspaceKey{
+		options: optionsHash(analysis.Options{
+			Revision: opts.Revision, ReuseCompatibleExpansion: opts.ReuseCompatibleExpansion, RetainExpanded: true,
+			SkipSemantics: true,
+		}),
+		uris: workspaceURIKey([]source.URI{helperURI, mainURI}),
+	}
+	first := snapshot.workspace[key]
+	if first == nil {
+		t.Fatal("workspace resolver was not cached")
+	}
+
+	next, ok := snapshot.Update(Document{
+		URI: mainURI, Text: []byte("main() { Helper(); return 2; }\n"), Version: 2,
+	})
+	if !ok {
+		t.Fatal("update rejected")
+	}
+	if _, err := next.AnalyzeWorkspace(context.Background(), opts); err != nil {
+		t.Fatal(err)
+	}
+	if next.workspace[key] == nil || next.workspace[key].resolver != first.resolver {
+		t.Fatal("body edit rebuilt the workspace resolver")
+	}
+}
+
 func TestSnapshotReusesChangedWorkspaceSemantics(t *testing.T) {
 	mainURI := source.FileURI("main.pwn")
 	helperURI := source.FileURI("helper.inc")

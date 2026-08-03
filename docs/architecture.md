@@ -24,8 +24,10 @@ workspace pass resolves file-scope declarations across every document in the
 same snapshot. It prepares syntax once, builds the shared name resolver, then
 completes semantics from those prepared results. A changed document carries its
 matching completed result forward, so unchanged function checks can be reused
-without reopening the file. A revision key invalidates results when resolver or
-API state changes.
+without reopening the file. Snapshot-local resolver indexes also survive body
+edits when every document keeps the same symbol table; declaration, include,
+or resolver changes rebuild the index. A revision key invalidates results when
+resolver or API state changes.
 
 Project hosts that know their dependency graph can use `AnalyzeDocuments` to
 exclude unrelated files from name resolution.

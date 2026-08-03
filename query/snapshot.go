@@ -10,6 +10,8 @@ import (
 	"sync"
 
 	analysis "github.com/pawnkit/pawn-analysis"
+	"github.com/pawnkit/pawn-analysis/sema"
+	"github.com/pawnkit/pawn-analysis/symbol"
 	"github.com/pawnkit/pawnkit-core/source"
 )
 
@@ -31,6 +33,7 @@ type Snapshot struct {
 	complete      map[cacheKey]*analysis.Result
 	prior         map[reuseKey]*analysis.Result
 	priorComplete map[reuseKey]*analysis.Result
+	workspace     map[workspaceKey]*workspaceIndex
 }
 
 type cacheKey struct {
@@ -44,11 +47,22 @@ type reuseKey struct {
 	options [32]byte
 }
 
+type workspaceKey struct {
+	options [32]byte
+	uris    string
+}
+
+type workspaceIndex struct {
+	resolver *workspaceResolver
+	fallback sema.Resolver
+	tables   map[source.URI]*symbol.Table
+}
+
 func New(documents ...Document) *Snapshot {
 	s := &Snapshot{
 		docs: make(map[source.URI]Document), cache: make(map[cacheKey]*analysis.Result),
 		complete: make(map[cacheKey]*analysis.Result), prior: make(map[reuseKey]*analysis.Result),
-		priorComplete: make(map[reuseKey]*analysis.Result),
+		priorComplete: make(map[reuseKey]*analysis.Result), workspace: make(map[workspaceKey]*workspaceIndex),
 	}
 	for _, document := range documents {
 		s.docs[document.URI] = cloneDocument(document)
@@ -80,7 +94,7 @@ func (s *Snapshot) update(document Document, cloneText bool) (*Snapshot, bool) {
 	next := &Snapshot{
 		docs: make(map[source.URI]Document, len(s.docs)+1), cache: make(map[cacheKey]*analysis.Result),
 		complete: make(map[cacheKey]*analysis.Result), prior: make(map[reuseKey]*analysis.Result),
-		priorComplete: make(map[reuseKey]*analysis.Result),
+		priorComplete: make(map[reuseKey]*analysis.Result), workspace: make(map[workspaceKey]*workspaceIndex),
 	}
 	for uri, current := range s.docs {
 		next.docs[uri] = current
@@ -105,6 +119,9 @@ func (s *Snapshot) update(document Document, cloneText bool) (*Snapshot, bool) {
 			next.priorComplete[reuseKey{uri: key.uri, options: key.options}] = result
 		}
 	}
+	for key, index := range s.workspace {
+		next.workspace[key] = index
+	}
 	s.mu.Unlock()
 	return next, true
 }
@@ -113,7 +130,7 @@ func newOwned(documents ...Document) *Snapshot {
 	s := &Snapshot{
 		docs: make(map[source.URI]Document), cache: make(map[cacheKey]*analysis.Result),
 		complete: make(map[cacheKey]*analysis.Result), prior: make(map[reuseKey]*analysis.Result),
-		priorComplete: make(map[reuseKey]*analysis.Result),
+		priorComplete: make(map[reuseKey]*analysis.Result), workspace: make(map[workspaceKey]*workspaceIndex),
 	}
 	for _, document := range documents {
 		s.docs[document.URI] = document

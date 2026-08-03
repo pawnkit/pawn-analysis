@@ -1,10 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.30.24 - 2026-08-03
 
 ### Performance
 
 - Reuse resolved constants for safe body-only edits before rebuilding CFGs.
+- Reuse the workspace resolver when unchanged symbol tables survive a document
+  body edit.
 
 ## 0.30.22 - 2026-08-03
 

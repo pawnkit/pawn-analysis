@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
+	"reflect"
 	"sort"
+	"strings"
 
 	analysis "github.com/pawnkit/pawn-analysis"
 	"github.com/pawnkit/pawn-analysis/sema"
@@ -55,7 +57,6 @@ func (s *Snapshot) AnalyzeDocuments(ctx context.Context, uris []source.URI, opts
 	uris = unique
 	sort.Slice(uris, func(i, j int) bool { return uris[i].String() < uris[j].String() })
 
-	resolver := newWorkspaceResolver(opts.Names)
 	prepared := make(map[source.URI]*analysis.Result, len(uris))
 	indexOpts := opts
 	indexOpts.RetainExpanded = true
@@ -67,12 +68,8 @@ func (s *Snapshot) AnalyzeDocuments(ctx context.Context, uris []source.URI, opts
 			return nil, err
 		}
 		prepared[uri] = result
-		table := result.ExpandedSymbols
-		if table == nil {
-			table = result.Symbols
-		}
-		resolver.add(table)
 	}
+	resolver := s.workspaceResolver(indexOptionsHash, uris, prepared, opts.Names)
 
 	workspace := &WorkspaceResult{Files: make(map[source.URI]*analysis.Result, len(uris))}
 	baseOptions := optionsHash(opts)
@@ -110,6 +107,81 @@ func (s *Snapshot) AnalyzeDocuments(ctx context.Context, uris []source.URI, opts
 		workspace.Diagnostics = append(workspace.Diagnostics, result.Diagnostics...)
 	}
 	return workspace, nil
+}
+
+func (s *Snapshot) workspaceResolver(
+	options [32]byte,
+	uris []source.URI,
+	prepared map[source.URI]*analysis.Result,
+	fallback sema.Resolver,
+) *workspaceResolver {
+	key := workspaceKey{options: options, uris: workspaceURIKey(uris)}
+	tables := make(map[source.URI]*symbol.Table, len(uris))
+	for _, uri := range uris {
+		result := prepared[uri]
+		table := result.ExpandedSymbols
+		if table == nil {
+			table = result.Symbols
+		}
+		tables[uri] = table
+	}
+	s.mu.Lock()
+	cached := s.workspace[key]
+	if cached != nil && sameResolver(cached.fallback, fallback) && sameWorkspaceTables(cached.tables, tables) {
+		resolver := cached.resolver
+		s.mu.Unlock()
+		return resolver
+	}
+	s.mu.Unlock()
+
+	resolver := newWorkspaceResolver(fallback)
+	for _, uri := range uris {
+		resolver.add(tables[uri])
+	}
+	// Cache the fingerprint before publishing the resolver. The resolver is
+	// read-only after construction, so concurrent workspace queries stay safe.
+	resolver.fingerprint()
+	index := &workspaceIndex{resolver: resolver, fallback: fallback, tables: tables}
+	s.mu.Lock()
+	if existing := s.workspace[key]; existing != nil && sameResolver(existing.fallback, fallback) && sameWorkspaceTables(existing.tables, tables) {
+		resolver = existing.resolver
+	} else {
+		s.workspace[key] = index
+	}
+	s.mu.Unlock()
+	return resolver
+}
+
+func workspaceURIKey(uris []source.URI) string {
+	var key strings.Builder
+	for _, uri := range uris {
+		key.WriteString(uri.String())
+		key.WriteByte(0)
+	}
+	return key.String()
+}
+
+func sameWorkspaceTables(left, right map[source.URI]*symbol.Table) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for uri, table := range left {
+		if right[uri] != table {
+			return false
+		}
+	}
+	return true
+}
+
+func sameResolver(left, right sema.Resolver) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	leftType, rightType := reflect.TypeOf(left), reflect.TypeOf(right)
+	if leftType != rightType || !leftType.Comparable() {
+		return false
+	}
+	return left == right
 }
 
 func completeOptionsHash(base [32]byte, resolver [32]byte) [32]byte {

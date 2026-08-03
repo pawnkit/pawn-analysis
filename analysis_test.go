@@ -211,6 +211,54 @@ func TestAnalyzeTracksUnchangedDeclarations(t *testing.T) {
 	}
 }
 
+func TestAnalyzeReusesConstantsForBodyEdit(t *testing.T) {
+	const revision = "project:constants"
+	before := []byte("const LIMIT = 1;\nstock Work() { if (LIMIT) return 1; return 0; }\n")
+	first := analysis.Analyze(before, analysis.Options{
+		URI: source.FileURI("test.pwn"), Revision: revision,
+	})
+	edit := preprocess.CompatibleEdit{
+		Before: preprocess.ByteRange{Start: len("const LIMIT = 1;\nstock Work() { if (LIMIT) "), End: len("const LIMIT = 1;\nstock Work() { if (LIMIT) return 1")},
+		After:  preprocess.ByteRange{Start: len("const LIMIT = 1;\nstock Work() { if (LIMIT) "), End: len("const LIMIT = 1;\nstock Work() { if (LIMIT) return 2")},
+	}
+	after, err := analysis.AnalyzeContext(context.Background(), []byte("const LIMIT = 1;\nstock Work() { if (LIMIT) return 2; return 0; }\n"), analysis.Options{
+		URI: source.FileURI("test.pwn"), Revision: revision, Previous: first, PreviousEdit: &edit,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := analysis.Analyze([]byte("const LIMIT = 1;\nstock Work() { if (LIMIT) return 2; return 0; }\n"), analysis.Options{
+		URI: source.FileURI("test.pwn"), Revision: revision,
+	})
+	if !reflect.DeepEqual(after.Diagnostics, want.Diagnostics) {
+		t.Fatalf("diagnostics differ after cached constants:\ngot  %#v\nwant %#v", after.Diagnostics, want.Diagnostics)
+	}
+}
+
+func TestAnalyzeRecomputesConstantsForLocalConstantEdit(t *testing.T) {
+	const revision = "project:local-constants"
+	before := []byte("stock Work() { const LIMIT = 1; if (LIMIT) return 1; return 0; }\n")
+	first := analysis.Analyze(before, analysis.Options{
+		URI: source.FileURI("test.pwn"), Revision: revision,
+	})
+	edit := preprocess.CompatibleEdit{
+		Before: preprocess.ByteRange{Start: len("stock Work() { const LIMIT = "), End: len("stock Work() { const LIMIT = 1")},
+		After:  preprocess.ByteRange{Start: len("stock Work() { const LIMIT = "), End: len("stock Work() { const LIMIT = 0")},
+	}
+	after, err := analysis.AnalyzeContext(context.Background(), []byte("stock Work() { const LIMIT = 0; if (LIMIT) return 1; return 0; }\n"), analysis.Options{
+		URI: source.FileURI("test.pwn"), Revision: revision, Previous: first, PreviousEdit: &edit,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := analysis.Analyze([]byte("stock Work() { const LIMIT = 0; if (LIMIT) return 1; return 0; }\n"), analysis.Options{
+		URI: source.FileURI("test.pwn"), Revision: revision,
+	})
+	if !reflect.DeepEqual(after.Diagnostics, want.Diagnostics) {
+		t.Fatalf("diagnostics differ after local constant edit:\ngot  %#v\nwant %#v", after.Diagnostics, want.Diagnostics)
+	}
+}
+
 func TestAnalyzeReusesExpandedViewForEquivalentTriviaEdit(t *testing.T) {
 	before := analysis.Analyze(
 		[]byte("stock Work() { return 1; } // old\n"),

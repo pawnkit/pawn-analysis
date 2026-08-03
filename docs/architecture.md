@@ -44,7 +44,8 @@ file-level fingerprint. Both indexes are lazy.
 ## Invalidation
 
 Function-body edits may reuse the include graph, unchanged name and tag checks,
-and unchanged CFGs. Edits that keep the same token kinds and positions also
+resolved constants, and unchanged CFGs when the edited function has no local
+constant declarations. Edits that keep the same token kinds and positions also
 reuse the original syntax tree. Function edits that do not touch identifiers
 also reuse the symbol table. Macro calls are indexed during preprocessing so
 this check does not scan the expanded token stream.

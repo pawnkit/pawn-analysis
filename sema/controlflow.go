@@ -21,7 +21,16 @@ type FunctionFlow struct {
 
 // FlowCache stores immutable function CFGs between document revisions.
 type FlowCache struct {
-	entries map[symbol.StableID]cachedFlow
+	entries   map[symbol.StableID]cachedFlow
+	constants map[symbol.ID]Constant
+}
+
+// ConstantValues returns the immutable constants used by this cache.
+func (c *FlowCache) ConstantValues() map[symbol.ID]Constant {
+	if c == nil {
+		return nil
+	}
+	return c.constants
 }
 
 type cachedFlow struct {
@@ -44,7 +53,7 @@ func CheckControlFlowCached(
 	previous *FlowCache,
 ) ([]FunctionFlow, []diagnostic.Diagnostic, *FlowCache, int) {
 	flows, diagnostics, cache, reused, _ := checkControlFlowCached(
-		context.Background(), false, root, table, previous,
+		context.Background(), false, root, table, previous, nil,
 	)
 	return flows, diagnostics, cache, reused
 }
@@ -56,7 +65,19 @@ func CheckControlFlowCachedContext(
 	table *symbol.Table,
 	previous *FlowCache,
 ) ([]FunctionFlow, []diagnostic.Diagnostic, *FlowCache, int, error) {
-	return checkControlFlowCached(ctx, true, root, table, previous)
+	return CheckControlFlowCachedWithConstantsContext(ctx, root, table, previous, nil)
+}
+
+// CheckControlFlowCachedWithConstantsContext reuses known constants when safe.
+// A nil constants map keeps the normal resolution path.
+func CheckControlFlowCachedWithConstantsContext(
+	ctx context.Context,
+	root parser.SyntaxNode,
+	table *symbol.Table,
+	previous *FlowCache,
+	constants map[symbol.ID]Constant,
+) ([]FunctionFlow, []diagnostic.Diagnostic, *FlowCache, int, error) {
+	return checkControlFlowCached(ctx, true, root, table, previous, constants)
 }
 
 func checkControlFlowCached(
@@ -65,6 +86,7 @@ func checkControlFlowCached(
 	root parser.SyntaxNode,
 	table *symbol.Table,
 	previous *FlowCache,
+	cachedConstants map[symbol.ID]Constant,
 ) ([]FunctionFlow, []diagnostic.Diagnostic, *FlowCache, int, error) {
 	cancel := cancellation{ctx: ctx, cancellable: cancellable}
 	if cancellable {
@@ -73,16 +95,20 @@ func checkControlFlowCached(
 		}
 	}
 	if !root.Valid() || table == nil {
-		return nil, nil, &FlowCache{entries: make(map[symbol.StableID]cachedFlow)}, 0, nil
+		return nil, nil, &FlowCache{entries: make(map[symbol.StableID]cachedFlow), constants: make(map[symbol.ID]Constant)}, 0, nil
 	}
 	var flows []FunctionFlow
 	var diagnostics []diagnostic.Diagnostic
-	constants, err := ResolveConstantsContext(ctx, root, table)
-	if err != nil {
-		return nil, nil, nil, 0, err
+	constants := cachedConstants
+	if constants == nil {
+		var err error
+		constants, err = ResolveConstantsContext(ctx, root, table)
+		if err != nil {
+			return nil, nil, nil, 0, err
+		}
 	}
 	constantHash := constantFingerprint(table, constants)
-	next := &FlowCache{entries: make(map[symbol.StableID]cachedFlow)}
+	next := &FlowCache{entries: make(map[symbol.StableID]cachedFlow), constants: constants}
 	reused := 0
 	decls := root.Declarations()
 	for decls.Next() {

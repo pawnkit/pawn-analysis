@@ -618,6 +618,67 @@ func reusableLocalEdit(
 	return false
 }
 
+func changedFunctionHasConstants(
+	current parser.SyntaxNode,
+	currentTable *symbol.Table,
+	previous parser.SyntaxNode,
+	previousTable *symbol.Table,
+	edit *preprocess.CompatibleEdit,
+) bool {
+	if edit == nil {
+		return false
+	}
+	currentFunction, currentOK := functionContaining(current, edit.After)
+	previousFunction, previousOK := functionContaining(previous, edit.Before)
+	if !currentOK || !previousOK {
+		return true
+	}
+	return functionHasConstants(currentFunction, currentTable) ||
+		functionHasConstants(previousFunction, previousTable)
+}
+
+func functionContaining(root parser.SyntaxNode, change preprocess.ByteRange) (parser.SyntaxNode, bool) {
+	declarations := root.Declarations()
+	for declarations.Next() {
+		declaration := declarations.Declaration()
+		if declaration.Kind() != parser.KindFunctionDefinition {
+			continue
+		}
+		rng := declaration.Range()
+		if change.Start >= rng.Start && change.End <= rng.End {
+			return declaration, true
+		}
+	}
+	return parser.SyntaxNode{}, false
+}
+
+func functionHasConstants(function parser.SyntaxNode, table *symbol.Table) bool {
+	if !function.Valid() || table == nil {
+		return true
+	}
+	var visit func(parser.SyntaxNode) bool
+	visit = func(node parser.SyntaxNode) bool {
+		if node.Kind() == parser.KindEnumDeclaration {
+			return true
+		}
+		if node.Kind() == parser.KindVariableDeclarator {
+			if name, ok := node.Field("name"); ok {
+				if item, declared := table.DeclarationAt(name.Range().Span(table.File)); declared && item.IsConst {
+					return true
+				}
+			}
+		}
+		children := node.Children()
+		for children.Next() {
+			if visit(children.Node()) {
+				return true
+			}
+		}
+		return false
+	}
+	return visit(function)
+}
+
 func changeTouchesMacroInvocation(
 	root parser.SyntaxNode,
 	change preprocess.ByteRange,
@@ -765,10 +826,16 @@ func CompleteContext(ctx context.Context, prepared *Result, opts Options) (*Resu
 	if reusableDeclarations(prepared, opts.Previous) {
 		previousFlow = opts.Previous.flowCache
 	}
+	var cachedConstants map[symbol.ID]sema.Constant
+	if canReuseLocal && prepared.Symbols == opts.Previous.Symbols &&
+		!changedFunctionHasConstants(prepared.Parse.Syntax(), prepared.Symbols, opts.Previous.Parse.Syntax(), opts.Previous.Symbols, opts.PreviousEdit) &&
+		opts.Previous.flowCache != nil {
+		cachedConstants = opts.Previous.flowCache.ConstantValues()
+	}
 	stage = beginStage(opts.Trace, StageSemanticCFG)
-	flows, flowDiagnostics, flowCache, reused, err := sema.CheckControlFlowCachedContext(
+	flows, flowDiagnostics, flowCache, reused, err := sema.CheckControlFlowCachedWithConstantsContext(
 		ctx,
-		prepared.Parse.Syntax(), prepared.Symbols, previousFlow,
+		prepared.Parse.Syntax(), prepared.Symbols, previousFlow, cachedConstants,
 	)
 	stage.end(ctx, reused)
 	semantics.Diagnostics = append(semantics.Diagnostics, flowDiagnostics...)

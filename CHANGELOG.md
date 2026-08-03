@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Performance
+
+- Reuse resolved constants for safe body-only edits before rebuilding CFGs.
+
 ## 0.30.22 - 2026-08-03
 
 ### Performance

@@ -58,6 +58,9 @@ Trivia-only edits keep the original syntax, symbol table, and stable semantic
 checks. The current source buffer is still attached to the reused syntax, so
 locations and diagnostics use the new text.
 
+Safe same-length token edits also share the previous immutable token slice;
+offsets and kinds stay unchanged while token text comes from the new source.
+
 The following changes force wider work:
 
 - Macro definitions and conditional directives rebuild preprocessing.

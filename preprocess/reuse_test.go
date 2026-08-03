@@ -62,6 +62,9 @@ func TestReuseCompatibleContext(t *testing.T) {
 	if string(after.Source) != "stock Work() { return 2; }\n" {
 		t.Fatalf("source = %q", after.Source)
 	}
+	if &after.OriginalTokens[0] != &before.OriginalTokens[0] {
+		t.Fatal("same-length token edit copied the token slice")
+	}
 }
 
 func TestReuseCompatibleContextShiftsFollowingDirectives(t *testing.T) {

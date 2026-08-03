@@ -184,8 +184,8 @@ func reuseSingleTokenEdit(src, previous []byte, edit CompatibleEdit, tokens []to
 	if local[0].Kind.IsTrivia() || local[0].Kind == token.Unknown {
 		return nil, false
 	}
-	patched := append([]token.Token(nil), tokens...)
-	return patched, true
+	// Token offsets and kinds are unchanged, so the immutable slice is safe to share.
+	return tokens, true
 }
 
 func compatibleEdit(before, after []byte) (CompatibleEdit, bool) {

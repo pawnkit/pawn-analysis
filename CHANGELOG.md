@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.30.15 - 2026-08-03
+
+### Performance
+
+- Share the immutable token slice for safe same-length incremental edits.
+
 ## 0.30.14 - 2026-08-03
 
 ### Performance

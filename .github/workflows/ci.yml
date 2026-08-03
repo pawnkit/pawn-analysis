@@ -18,9 +18,9 @@ jobs:
       matrix:
         go-version: ["1.26", "stable"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go-version }}
 
@@ -54,18 +54,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out pawn-analysis
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: pawn-analysis
 
       - name: Check out pawn-corpus
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: pawnkit/pawn-corpus
           ref: ff6369e0060edb8667379abd35207d7d893ea12b
           path: pawn-corpus
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.26"
 
@@ -83,14 +83,14 @@ jobs:
     name: lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.26"
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v9
         with:
           version: v2.12.2
 
@@ -98,9 +98,9 @@ jobs:
     name: fuzz smoke test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.26"
 
@@ -114,9 +114,9 @@ jobs:
     name: benchmarks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.26"
 

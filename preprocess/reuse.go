@@ -30,6 +30,8 @@ func ReuseTriviaContext(
 	result := *previous
 	result.Source = src
 	result.OriginalTokens = tokens
+	result.OriginalCompactTokens = nil
+	result.OriginalTrivia = nil
 	result.Files = append([]FileInfo(nil), previous.Files...)
 	if len(result.Files) != 0 {
 		result.Files[0].Content = src
@@ -114,6 +116,8 @@ func reuseCompatibleContext(
 	result := *previous
 	result.Source = src
 	result.OriginalTokens = tokens
+	result.OriginalCompactTokens = nil
+	result.OriginalTrivia = nil
 	result.Files = append([]FileInfo(nil), previous.Files...)
 	if len(result.Files) != 0 {
 		result.Files[0].Content = src

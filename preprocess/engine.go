@@ -135,17 +135,19 @@ type MacroInvocation struct {
 // use each token's Origin chain (via github.com/pawnkit/pawn-parser's
 // SyntaxToken.Origin) to recover the true original location instead.
 type Result struct {
-	Files            []FileInfo // Files[0] is the root file.
-	Source           []byte
-	ExpandedSource   []byte
-	OriginalTokens   []token.Token
-	ExpandedTokens   []token.Token
-	Branches         []Branch
-	Includes         []Include
-	MacroInvocations []MacroInvocation
-	Macros           map[string]Macro
-	Diagnostics      []Diagnostic
-	Truncated        bool
+	Files                 []FileInfo // Files[0] is the root file.
+	Source                []byte
+	ExpandedSource        []byte
+	OriginalTokens        []token.Token
+	OriginalCompactTokens []token.CompactToken
+	OriginalTrivia        []token.CompactTrivia
+	ExpandedTokens        []token.Token
+	Branches              []Branch
+	Includes              []Include
+	MacroInvocations      []MacroInvocation
+	Macros                map[string]Macro
+	Diagnostics           []Diagnostic
+	Truncated             bool
 }
 
 // ToCoreDiagnostics maps all diagnostics to one file.
@@ -354,11 +356,13 @@ func run(src []byte, opts Options, ctx context.Context, cancellable bool) (*Resu
 	}
 
 	var originalTokens []token.Token
+	var originalCompactTokens []token.CompactToken
+	var originalTrivia []token.CompactTrivia
 	var err error
 	if cancellable {
-		originalTokens, err = lexer.TokenizeContext(ctx, src)
+		originalTokens, originalCompactTokens, originalTrivia, err = lexer.TokenizeCompactContext(ctx, src, true)
 	} else {
-		originalTokens = lexer.Tokenize(src)
+		originalTokens, originalCompactTokens, originalTrivia = lexer.TokenizeCompact(src, true)
 	}
 	if err != nil {
 		return nil, err
@@ -376,17 +380,19 @@ func run(src []byte, opts Options, ctx context.Context, cancellable bool) (*Resu
 	e.backfillPositions()
 
 	return &Result{
-		Files:            e.files,
-		Source:           src,
-		ExpandedSource:   e.expandedBuf,
-		OriginalTokens:   originalTokens,
-		ExpandedTokens:   e.out,
-		Branches:         e.branches,
-		Includes:         e.includes,
-		MacroInvocations: e.invocations,
-		Macros:           e.macros.snapshot(),
-		Diagnostics:      e.diags,
-		Truncated:        e.truncated,
+		Files:                 e.files,
+		Source:                src,
+		ExpandedSource:        e.expandedBuf,
+		OriginalTokens:        originalTokens,
+		OriginalCompactTokens: originalCompactTokens,
+		OriginalTrivia:        originalTrivia,
+		ExpandedTokens:        e.out,
+		Branches:              e.branches,
+		Includes:              e.includes,
+		MacroInvocations:      e.invocations,
+		Macros:                e.macros.snapshot(),
+		Diagnostics:           e.diags,
+		Truncated:             e.truncated,
 	}, nil
 }
 

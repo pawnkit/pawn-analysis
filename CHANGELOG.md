@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.30.13 - 2026-08-03
+
+### Performance
+
+- Reuse preprocessor token and trivia retention during original-source parsing.
+
 ## 0.30.12 - 2026-08-02
 
 ### Changed

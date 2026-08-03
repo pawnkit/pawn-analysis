@@ -202,7 +202,14 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 			current.end(ctx, 1)
 			return
 		}
-		parsed, parsedErr = parser.ParseTokensCompactContext(ctx, text, pre.OriginalTokens, parser.ParseOptions{})
+		parsed, parsedErr = parser.ParseTokensCompactContextWithRetention(
+			ctx,
+			text,
+			pre.OriginalTokens,
+			pre.OriginalCompactTokens,
+			pre.OriginalTrivia,
+			parser.ParseOptions{},
+		)
 		current.end(ctx, 0)
 	}
 	parseExpanded := func() {

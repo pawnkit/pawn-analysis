@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.30.16 - 2026-08-03
+
+### Performance
+
+- Reuse declaration boundaries after local body edits instead of rehashing the full file.
+- Use pawn-parser v1.5.11.
+
 ## 0.30.15 - 2026-08-03
 
 ### Performance

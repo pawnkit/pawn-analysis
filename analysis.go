@@ -313,7 +313,12 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 	diagnostics = append(diagnostics, expandedTableDiagnostics(expandedTable, fileID)...)
 	addDiagnosticDocs(diagnostics)
 	stage = beginStage(opts.Trace, StageDeclarations)
-	declarations := parser.BuildDeclarationIndex(parsed)
+	declarations, rebasedDeclarations := rebasedDeclarationIndex(
+		parsed, opts.Previous, localEdit, localCandidate,
+	)
+	if !rebasedDeclarations {
+		declarations = parser.BuildDeclarationIndex(parsed)
+	}
 	if localCandidate && !reusableLocalEdit(opts.Previous, parsed, declarations, table, localEdit) {
 		fallback := opts
 		fallback.Previous = nil
@@ -343,6 +348,23 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		return retainExpanded(prepared, opts.RetainExpanded), nil
 	}
 	return CompleteContext(ctx, prepared, opts)
+}
+
+func rebasedDeclarationIndex(
+	parsed *parser.CompactFile,
+	previous *Result,
+	edit preprocess.CompatibleEdit,
+	localCandidate bool,
+) (parser.DeclarationIndex, bool) {
+	if !localCandidate || previous == nil {
+		return parser.DeclarationIndex{}, false
+	}
+	return parser.RebaseDeclarationIndex(
+		previous.Declarations,
+		parsed,
+		parser.ByteRange{Start: edit.Before.Start, End: edit.Before.End},
+		parser.ByteRange{Start: edit.After.Start, End: edit.After.End},
+	)
 }
 
 func rebasedParenthesizedSymbols(

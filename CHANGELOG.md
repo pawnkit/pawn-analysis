@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.30.17 - 2026-08-03
+
+### Performance
+
+- Cache the workspace resolver fingerprint while completing documents in one
+  snapshot.
+
 ## 0.30.16 - 2026-08-03
 
 ### Performance

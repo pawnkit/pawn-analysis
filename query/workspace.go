@@ -120,12 +120,17 @@ func completeOptionsHash(opts analysis.Options, resolver [32]byte) [32]byte {
 }
 
 type workspaceResolver struct {
-	names    map[string]sema.Callable
-	nonCalls map[string]struct{}
-	fallback sema.Resolver
+	names            map[string]sema.Callable
+	nonCalls         map[string]struct{}
+	fallback         sema.Resolver
+	fingerprintCache [32]byte
+	fingerprintValid bool
 }
 
 func (r *workspaceResolver) fingerprint() [32]byte {
+	if r.fingerprintValid {
+		return r.fingerprintCache
+	}
 	hash := sha256.New()
 	var size [8]byte
 	write := func(value string) {
@@ -160,9 +165,9 @@ func (r *workspaceResolver) fingerprint() [32]byte {
 		hash.Write([]byte{2})
 		write(name)
 	}
-	var result [32]byte
-	copy(result[:], hash.Sum(nil))
-	return result
+	copy(r.fingerprintCache[:], hash.Sum(nil))
+	r.fingerprintValid = true
+	return r.fingerprintCache
 }
 
 func newWorkspaceResolver(fallback sema.Resolver) *workspaceResolver {
@@ -189,6 +194,7 @@ func (r *workspaceResolver) add(table *symbol.Table) {
 			r.nonCalls[item.Name] = struct{}{}
 		}
 	}
+	r.fingerprintValid = false
 }
 
 func (r *workspaceResolver) ResolveName(name string) sema.NameState {

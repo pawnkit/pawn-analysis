@@ -50,6 +50,9 @@ func TestTagMismatchChecks(t *testing.T) {
 		{"binary operator overload", "Float:operator+(bool:left, Float:right) { return right; } Float:Get() { return bool:true + 1.0; }", 0},
 		{"operator overload mismatch", "Float:operator+(bool:left, Float:right) { return right; } main() { new bool:left; new String:right; return left + right; }", 1},
 		{"comparison result", "Float:GetValue() { return 1 == 1; }", 1},
+		{"comparison chain", "Check(Float:value) { return 0.0 <= value < 1.0; }", 0},
+		{"comparison chain mismatch", "Check(Float:value, bool:other) { return 0.0 <= value < other; }", 1},
+		{"parenthesized comparison", "Check(Float:value) { return (0.0 <= value) < 1.0; }", 1},
 		{"logical negation result", "Float:GetValue() { return !1; }", 1},
 	}
 	for _, test := range tests {

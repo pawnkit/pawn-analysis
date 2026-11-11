@@ -120,6 +120,9 @@ type Include struct {
 type MacroInvocation struct {
 	File  uint32
 	Range ByteRange
+	// Expansion is the emitted byte range in ExpandedSource for an invocation
+	// expanded from the input stream. Nested range extensions leave it empty.
+	Expansion ByteRange
 }
 
 // Result is the immutable outcome of one [Run]. All slices are safe to
@@ -317,6 +320,7 @@ type engine struct {
 	truncated    bool
 	stopped      bool
 	includeStack map[string]int
+	condition    *conditionExpansion
 
 	depthLimitWarned bool
 }

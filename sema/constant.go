@@ -103,6 +103,13 @@ func (e constantEvaluator) evalBinary(node parser.SyntaxNode) Constant {
 	if !leftOK || !rightOK {
 		return Constant{}
 	}
+	if middle, chained := relationalChainLeft(node, leftNode); chained {
+		prefix := e.eval(leftNode)
+		if !prefix.Known || prefix.Value == 0 {
+			return prefix
+		}
+		leftNode = middle
+	}
 	left, right := e.eval(leftNode), e.eval(rightNode)
 	if !left.Known || !right.Known {
 		return Constant{}

@@ -22,6 +22,9 @@ func TestForwardingMacroExposesReplacementCallable(t *testing.T) {
 	if !ok {
 		t.Fatal("macro missing")
 	}
+	if macro.Kind != preprocess.MacroFunctionLike {
+		t.Fatalf("forwarding macro kind = %v, want function-like", macro.Kind)
+	}
 	if got, ok := macro.ReplacementCallable(); !ok || got != "Dialog_Open" {
 		t.Fatalf("replacement callable = %q, %v; macro = %#v", got, ok, macro)
 	}

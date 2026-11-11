@@ -109,6 +109,10 @@ func TestReuseCompatibleContextShiftsFollowingMacroInvocations(t *testing.T) {
 	if got, want := after.MacroInvocations[0].Range.Start, before.MacroInvocations[0].Range.Start+delta; got != want {
 		t.Fatalf("invocation start = %d, want %d", got, want)
 	}
+	expansion := after.MacroInvocations[0].Expansion
+	if got := string(after.ExpandedSource[expansion.Start:expansion.End]); got != "1" {
+		t.Fatalf("invocation expansion = %q, want %q", got, "1")
+	}
 }
 
 func TestReuseCompatibleContextRejectsDirectiveEdit(t *testing.T) {

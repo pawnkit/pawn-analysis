@@ -8,6 +8,12 @@
   including tagged prefixes and bracket-delimited captures.
 - Preserve textual token pasting in macro replacements and rescan the resulting
   identifiers, preventing false argument counts for included function signatures.
+- Rescan nested macro replacements with the source tokens that follow them, and
+  expand macros in conditional directives while preserving the operand of
+  `defined`.
+- Use macro-expanded declarations and control flow for diagnostics, reducing
+  false syntax, redeclaration, return-tag, and unreachable-code reports.
+- Check and evaluate chained comparisons between adjacent operands.
 
 ## 0.30.24 - 2026-08-03
 

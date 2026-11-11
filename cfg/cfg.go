@@ -205,6 +205,10 @@ func (b *builder) statement(node parser.SyntaxNode) fragment {
 		return b.sequence(node)
 	case parser.KindIfStatement:
 		return b.branch(node)
+	case parser.KindMacroInvocationBlock:
+		if _, ok := node.Field("condition"); ok {
+			return b.branch(node)
+		}
 	case parser.KindSwitchStatement:
 		return b.switchStatement(node)
 	case parser.KindWhileStatement, parser.KindDoWhileStatement, parser.KindForStatement:
@@ -222,10 +226,9 @@ func (b *builder) statement(node parser.SyntaxNode) fragment {
 		return b.gotoStatement(node)
 	case parser.KindLabelStatement:
 		return b.labelStatement(node)
-	default:
-		id := b.block(node)
-		return fragment{entry: id, exits: []ID{id}}
 	}
+	id := b.block(node)
+	return fragment{entry: id, exits: []ID{id}}
 }
 
 func (b *builder) gotoStatement(node parser.SyntaxNode) fragment {

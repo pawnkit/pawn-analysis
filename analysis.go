@@ -4,6 +4,7 @@ package analysis
 import (
 	"context"
 	"errors"
+	"maps"
 	"runtime"
 	"sort"
 	"sync"
@@ -51,29 +52,30 @@ type ReuseStats struct {
 
 // Result is one immutable file analysis.
 type Result struct {
-	File                source.FileID
-	Registry            *source.Registry
-	Preprocess          *preprocess.Result
-	Parse               *parser.CompactFile
-	ExpandedParse       *parser.CompactFile
-	Declarations        parser.DeclarationIndex
-	Symbols             *symbol.Table
-	ExpandedSymbols     *symbol.Table
-	Semantics           sema.Result
-	ControlFlow         []sema.FunctionFlow
-	FunctionFacts       map[symbol.ID]sema.FunctionFacts
-	Diagnostics         []diagnostic.Diagnostic
-	Reuse               ReuseStats
-	baseDiagnostics     []diagnostic.Diagnostic
-	flowCache           *sema.FlowCache
-	tagCache            *sema.TagCache
-	nameCache           *sema.NameCache
-	nameResult          sema.Result
-	stateDiagnostics    []diagnostic.Diagnostic
-	orderDiagnostics    []diagnostic.Diagnostic
-	directFunctionFacts map[symbol.ID]sema.FunctionFacts
-	reuseLocalSemantics bool
-	revision            string
+	File                 source.FileID
+	Registry             *source.Registry
+	Preprocess           *preprocess.Result
+	Parse                *parser.CompactFile
+	ExpandedParse        *parser.CompactFile
+	Declarations         parser.DeclarationIndex
+	Symbols              *symbol.Table
+	ExpandedSymbols      *symbol.Table
+	Semantics            sema.Result
+	ControlFlow          []sema.FunctionFlow
+	FunctionFacts        map[symbol.ID]sema.FunctionFacts
+	Diagnostics          []diagnostic.Diagnostic
+	Reuse                ReuseStats
+	baseDiagnostics      []diagnostic.Diagnostic
+	flowCache            *sema.FlowCache
+	tagCache             *sema.TagCache
+	nameCache            *sema.NameCache
+	nameResult           sema.Result
+	stateDiagnostics     []diagnostic.Diagnostic
+	orderDiagnostics     []diagnostic.Diagnostic
+	directFunctionFacts  map[symbol.ID]sema.FunctionFacts
+	reuseLocalSemantics  bool
+	conditionalMacroEnds map[int]int
+	revision             string
 }
 
 // Analyze runs the shared per-file pipeline.
@@ -166,7 +168,14 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 	var expandedErr error
 	var expandedTable *symbol.Table
 	reusedExpanded := reusableExpanded(pre, opts.Previous)
+	caseMacroEnds := originalCaseMacroEnds(pre)
+	conditionalMacroEnds := originalConditionalMacroEnds(pre)
+	originalOptions := parser.ParseOptions{CaseMacroEnds: caseMacroEnds, ConditionalMacroEnds: conditionalMacroEnds}
 	reusedOriginal := reusableOriginalSyntax(pre, opts.Previous, opts.ReuseCompatibleExpansion || reusedTrivia)
+	if reusedOriginal && !reusedPreprocess {
+		reusedOriginal = maps.Equal(caseMacroEnds, originalCaseMacroEnds(opts.Previous.Preprocess)) &&
+			maps.Equal(conditionalMacroEnds, opts.Previous.conditionalMacroEnds)
+	}
 	stableOriginalPositions := reusedOriginal
 	rebasedOriginal := false
 	reparsedDeclaration := false
@@ -184,12 +193,13 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		)
 		rebasedOriginal = reusedOriginal
 		if !reusedOriginal {
-			parsed, reusedOriginal = parser.ReparseCompactDeclaration(
+			parsed, reusedOriginal = parser.ReparseCompactDeclarationWithOptions(
 				text,
 				pre.OriginalTokens,
 				opts.Previous.Parse,
 				parser.ByteRange{Start: localEdit.Before.Start, End: localEdit.Before.End},
 				parser.ByteRange{Start: localEdit.After.Start, End: localEdit.After.End},
+				originalOptions,
 			)
 			reparsedDeclaration = reusedOriginal
 		}
@@ -210,7 +220,7 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 			pre.OriginalTokens,
 			pre.OriginalCompactTokens,
 			pre.OriginalTrivia,
-			parser.ParseOptions{},
+			originalOptions,
 		)
 		current.end(ctx, 0)
 	}
@@ -228,7 +238,7 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		)
 		current.end(ctx, 0)
 	}
-	needsExpanded := opts.RetainExpanded || opts.Includes != nil
+	needsExpanded := opts.RetainExpanded || opts.Includes != nil || len(pre.MacroInvocations) > 0
 	const parallelParseMinimumBytes = 256 * 1024
 	if needsExpanded && len(text)+len(pre.ExpandedSource) >= parallelParseMinimumBytes && runtime.GOMAXPROCS(0) > 1 {
 		var wait sync.WaitGroup
@@ -302,15 +312,13 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 	}
 	if hasRedeclarationDiagnostics(table) || hasRedeclarationDiagnostics(expandedTable) {
 		invocations := macroInvocationRanges(pre)
-		table.Diagnostics = removeMacroDeclarationDiagnostics(table.Diagnostics, invocations)
+		table.Diagnostics = removeRawMacroRedeclarations(table.Diagnostics, pre, fileID, invocations)
 		if expandedTable != nil {
 			expandedTable.Diagnostics = removeMacroDeclarationDiagnostics(expandedTable.Diagnostics, invocations)
 		}
 	}
 	diagnostics := pre.ToRegistryDiagnostics(registry, fileID)
-	for _, item := range parsed.Diagnostics {
-		diagnostics = append(diagnostics, item.ToCore(fileID))
-	}
+	diagnostics = appendParseDiagnostics(diagnostics, parsed, expanded, pre, fileID)
 	diagnostics = append(diagnostics, table.Diagnostics...)
 	diagnostics = append(diagnostics, expandedTableDiagnostics(expandedTable, fileID)...)
 	addDiagnosticDocs(diagnostics)
@@ -338,6 +346,7 @@ func AnalyzeContext(ctx context.Context, text []byte, opts Options) (*Result, er
 		File: fileID, Registry: registry, Preprocess: pre, Parse: parsed, ExpandedParse: expanded,
 		Declarations: declarations, Symbols: table, ExpandedSymbols: expandedTable,
 		Diagnostics: diagnostics, baseDiagnostics: diagnostics,
+		conditionalMacroEnds: conditionalMacroEnds,
 		reuseLocalSemantics: (localCandidate || reusedTrivia) && stableOriginalPositions && opts.Previous != nil &&
 			table == opts.Previous.Symbols,
 		revision: opts.Revision,
@@ -780,10 +789,19 @@ func CompleteContext(ctx context.Context, prepared *Result, opts Options) (*Resu
 		return nil, err
 	}
 	var previousTags *sema.TagCache
-	if reusableDeclarations(prepared, opts.Previous) {
-		previousTags = opts.Previous.tagCache
+	if previous := opts.Previous; reusableDeclarations(prepared, previous) && previous.Preprocess != nil {
+		// A verified local edit can reuse preprocessing and source positions
+		// even when the previous result did not retain its expanded table.
+		noMacros := len(prepared.Preprocess.MacroInvocations) == 0 &&
+			len(previous.Preprocess.MacroInvocations) == 0
+		sameExpandedSymbols := prepared.ExpandedSymbols != nil &&
+			prepared.ExpandedSymbols == previous.ExpandedSymbols
+		if canReuseLocal || noMacros || sameExpandedSymbols {
+			previousTags = previous.tagCache
+		}
 	}
 	stage = beginStage(opts.Trace, StageSemanticTags)
+	resolver.declarationTags = expandedDeclarationTags(ctx, prepared)
 	tagDiagnostics, tagCache, reusedTags, err := sema.CheckTagsCachedIndexedContext(
 		ctx,
 		prepared.Parse.Syntax(), prepared.Symbols, resolver, previousTags, opts.Revision, prepared.Declarations,
@@ -823,7 +841,8 @@ func CompleteContext(ctx context.Context, prepared *Result, opts Options) (*Resu
 	}
 	semantics.Diagnostics = append(semantics.Diagnostics, orderDiagnostics...)
 	var previousFlow *sema.FlowCache
-	if reusableDeclarations(prepared, opts.Previous) {
+	if reusableDeclarations(prepared, opts.Previous) &&
+		maps.Equal(prepared.conditionalMacroEnds, opts.Previous.conditionalMacroEnds) {
 		previousFlow = opts.Previous.flowCache
 	}
 	var cachedConstants map[symbol.ID]sema.Constant
@@ -968,6 +987,46 @@ func expandedSpanMapper(tokens []token.Token, files func(uint32) source.FileID) 
 	}
 }
 
+func appendParseDiagnostics(
+	items []diagnostic.Diagnostic, original, expanded *parser.CompactFile,
+	pre *preprocess.Result, file source.FileID,
+) []diagnostic.Diagnostic {
+	var invocations []preprocess.ByteRange
+	if expanded != nil && !pre.Truncated {
+		invocations = macroInvocationRanges(pre)
+	}
+	for _, item := range original.Diagnostics {
+		finding := item.ToCore(file)
+		if !insideMacroInvocation(finding.Primary, invocations) {
+			items = append(items, finding)
+		}
+	}
+	if len(invocations) == 0 {
+		return items
+	}
+	// Use expanded syntax within an invocation and map its errors back to
+	// the source span. Recovery edits to generated tokens cannot be applied.
+	for _, item := range expanded.Diagnostics {
+		offset := item.Range.Start
+		index := sort.Search(len(pre.ExpandedTokens), func(i int) bool {
+			return pre.ExpandedTokens[i].End.Offset > offset
+		})
+		if index >= len(pre.ExpandedTokens) {
+			continue
+		}
+		origin := pre.ExpandedTokens[index].Origin
+		if origin == nil || origin.Macro == "" || origin.Span.File != 0 {
+			continue
+		}
+		finding := item.ToCore(file)
+		finding.Primary.Start = source.Offset(origin.Span.Start.Offset)
+		finding.Primary.End = source.Offset(origin.Span.End.Offset)
+		finding.SafeFixes, finding.ReviewFixes = nil, nil
+		items = append(items, finding)
+	}
+	return items
+}
+
 func hasRedeclarationDiagnostics(table *symbol.Table) bool {
 	if table == nil {
 		return false
@@ -991,6 +1050,59 @@ func removeMacroDeclarationDiagnostics(
 		}
 	}
 	return result
+}
+
+func removeRawMacroRedeclarations(
+	items []diagnostic.Diagnostic, pre *preprocess.Result, file source.FileID,
+	invocations []preprocess.ByteRange,
+) []diagnostic.Diagnostic {
+	result := items[:0]
+	for _, item := range items {
+		if item.Code == "pawn-analysis:symbol/redeclared" {
+			if macroRewritesDeclaration(pre, file, item.Primary, invocations) {
+				continue
+			}
+			rewrittenPrevious := false
+			for _, related := range item.Related {
+				if macroRewritesDeclaration(pre, file, related.Span, invocations) {
+					rewrittenPrevious = true
+					break
+				}
+			}
+			if rewrittenPrevious {
+				continue
+			}
+		}
+		result = append(result, item)
+	}
+	return result
+}
+
+func macroRewritesDeclaration(
+	pre *preprocess.Result, file source.FileID, span source.Span, invocations []preprocess.ByteRange,
+) bool {
+	if pre.Truncated || span.File != file || !insideMacroInvocation(span, invocations) {
+		return false
+	}
+	start, end := int(span.Start), int(span.End)
+	name := string(pre.Source[start:end])
+	for _, invocation := range pre.MacroInvocations {
+		if invocation.File != 0 || invocation.Range.Start > start || invocation.Range.End < end ||
+			invocation.Expansion.Start == invocation.Expansion.End {
+			continue
+		}
+		tokens := pre.ExpandedTokens
+		expansion := invocation.Expansion
+		index := sort.Search(len(tokens), func(i int) bool { return tokens[i].Start.Offset >= expansion.Start })
+		for index < len(tokens) && tokens[index].Start.Offset < expansion.End {
+			if tokens[index].Kind == token.Identifier && tokens[index].Text(pre.ExpandedSource) == name {
+				return false
+			}
+			index++
+		}
+		return true
+	}
+	return false
 }
 
 func macroInvocationRanges(pre *preprocess.Result) []preprocess.ByteRange {
@@ -1038,10 +1150,11 @@ func insideMacroInvocation(span source.Span, ranges []preprocess.ByteRange) bool
 }
 
 type nameResolver struct {
-	macros      map[string]preprocess.Macro
-	symbols     *symbol.Table
-	globalNames map[string]symbol.ID
-	next        sema.Resolver
+	macros          map[string]preprocess.Macro
+	symbols         *symbol.Table
+	globalNames     map[string]symbol.ID
+	declarationTags map[source.Span]string
+	next            sema.Resolver
 }
 
 // newNameResolver reuses the file scope's existing name index instead of
@@ -1089,6 +1202,21 @@ func (r nameResolver) ResolveCallable(name string) (sema.Callable, bool) {
 
 func (r nameResolver) ResolveTag(tag string) string {
 	return resolveTagMacros(tag, r.macros)
+}
+
+func (r nameResolver) ResolveDeclarationTag(original symbol.Symbol) (string, bool) {
+	if tag, ok := r.declarationTags[original.Span]; ok {
+		return tag, true
+	}
+	expanded, ok := r.global(original.Name)
+	// A generated declaration maps to its entire invocation. Confirm it
+	// comes from this declaration before adopting its return tag.
+	if !ok || !expanded.Kind.IsCallable() || expanded.Span == original.Span ||
+		expanded.Span.File != original.Span.File ||
+		expanded.Span.Start > original.Span.Start || expanded.Span.End < original.Span.End {
+		return "", false
+	}
+	return expanded.Tag, true
 }
 
 func (r nameResolver) global(name string) (symbol.Symbol, bool) {

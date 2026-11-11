@@ -12,11 +12,28 @@ import (
 // narrow evaluator does not support (an undefined-behaviour result must
 // never be invented); callers should default to treating the branch as
 // inactive and report [CodeUnresolvableCondition] in that case.
-func evalCondition(toks []token.Token, source []byte, macros *macroTable) (value int64, ok bool) {
+func (e *engine) evalCondition(toks []token.Token, source []byte) (value int64, ok bool) {
 	if len(toks) == 0 {
 		return 0, false
 	}
-	p := &exprEval{toks: toPtoks(source, toks), macros: macros}
+	// Use the same textual substitution as source code, but keep condition
+	// output separate and preserve the literal operand of defined.
+	condition := &conditionExpansion{}
+	expansion := engine{
+		ctx: e.ctx, cancellable: e.cancellable, steps: e.steps,
+		macros: e.macros, opts: e.opts, condition: condition,
+	}
+	empty := &frame{}
+	expansion.expandReplacement(empty, toPtoks(source, toks), &expansionCursor{frame: empty}, nil, 0)
+	e.steps = expansion.steps
+	if expansion.cancelled != nil {
+		e.cancelled = expansion.cancelled
+		e.stopped = true
+	}
+	if expansion.truncated || expansion.cancelled != nil {
+		return 0, false
+	}
+	p := &exprEval{toks: condition.tokens, macros: e.macros}
 	v := p.parseLogicalOr()
 	if p.unknown || p.pos != len(p.toks) {
 		return 0, false
@@ -24,11 +41,24 @@ func evalCondition(toks []token.Token, source []byte, macros *macroTable) (value
 	return v, true
 }
 
+type conditionExpansion struct {
+	tokens         []ptok
+	definedOperand bool
+}
+
+func (c *conditionExpansion) keepUnexpanded(kind token.Kind) bool {
+	if c.definedOperand {
+		c.definedOperand = kind == token.LParen
+		return true
+	}
+	c.definedOperand = kind == token.KwDefined
+	return c.definedOperand
+}
+
 type exprEval struct {
 	toks    []ptok
 	pos     int
 	macros  *macroTable
-	guard   map[string]bool
 	unknown bool
 }
 
@@ -124,12 +154,35 @@ func (p *exprEval) parseEquality() int64 {
 }
 
 func (p *exprEval) parseRelational() int64 {
-	return p.parseBinary(p.parseShift, []binOp{
+	operators := []binOp{
 		{token.Lt, func(a, b int64) int64 { return boolToInt(a < b) }},
 		{token.Gt, func(a, b int64) int64 { return boolToInt(a > b) }},
 		{token.LtEq, func(a, b int64) int64 { return boolToInt(a <= b) }},
 		{token.GtEq, func(a, b int64) int64 { return boolToInt(a >= b) }},
-	})
+	}
+	left := p.parseShift()
+	result := int64(1)
+	compared := false
+	for {
+		var compare func(int64, int64) int64
+		for _, operator := range operators {
+			if p.at(operator.kind) {
+				compare = operator.eval
+				break
+			}
+		}
+		if compare == nil {
+			if !compared {
+				return left
+			}
+			return result
+		}
+		p.advance()
+		right := p.parseShift()
+		result &= compare(left, right)
+		left = right
+		compared = true
+	}
 }
 
 func (p *exprEval) parseShift() int64 {
@@ -208,7 +261,7 @@ func (p *exprEval) parsePrimary() int64 {
 		return p.parseDefined()
 	case token.Identifier:
 		p.advance()
-		return p.evalIdent(tok.text)
+		return 0
 	default:
 		p.fail()
 		return 0
@@ -234,32 +287,6 @@ func (p *exprEval) parseDefined() int64 {
 		p.advance()
 	}
 	return boolToInt(p.macros.defined(name))
-}
-
-func (p *exprEval) evalIdent(name string) int64 {
-	if p.macros == nil || p.guard[name] {
-		return 0
-	}
-	m, ok := p.macros.lookup(name)
-	if !ok {
-		return 0
-	}
-	if m.Kind != MacroObjectLike {
-		p.fail()
-		return 0
-	}
-	guard := make(map[string]bool, len(p.guard)+1)
-	for k := range p.guard {
-		guard[k] = true
-	}
-	guard[name] = true
-	sub := &exprEval{toks: m.Body, macros: p.macros, guard: guard}
-	v := sub.parseLogicalOr()
-	if sub.unknown || sub.pos != len(sub.toks) {
-		p.fail()
-		return 0
-	}
-	return v
 }
 
 func parseIntLiteral(text string) int64 {

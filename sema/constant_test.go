@@ -32,6 +32,9 @@ func TestEvalConstant(t *testing.T) {
 	}{
 		{"1 + 2 * 3", 7, true},
 		{"(8 >> 1) == 4", 1, true},
+		{"1 < 2 <= 2", 1, true},
+		{"3 < 2 < 1", 0, true},
+		{"(3 < 2) < 1", 1, true},
 		{"0 ? 10 : 20", 20, true},
 		{"10 / 0", 0, false},
 		{"unknown + 1", 0, false},

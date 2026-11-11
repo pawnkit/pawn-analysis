@@ -109,9 +109,8 @@ func (e *engine) handleDefine(f *frame, hash token.Token) {
 
 	m := Macro{Name: name, Kind: MacroObjectLike, File: f.fileIndex, DefSpan: spanOf(hash, nameTok)}
 
-	if f.cur().Kind == token.LParen && nameTok.End.Offset == f.cur().Start.Offset {
-		m.FlexiblePattern = !closingParenOnLine(f)
-		lparen := f.advance()
+	if f.cur().Kind == token.LParen && nameTok.End.Offset == f.cur().Start.Offset && hasMacroParameterList(f) {
+		f.advance()
 		m.Kind = MacroFunctionLike
 		m.ParamSlots = make(map[int]int)
 		m.NamedParams = make(map[string]int)
@@ -149,7 +148,6 @@ func (e *engine) handleDefine(f *frame, hash token.Token) {
 			}
 		}
 		m.ParamCount = idx
-		_ = lparen
 	}
 	// Pawn's pattern ends at whitespace, not at the identifier or closing
 	// parenthesis. Keep fixed punctuation in the match, never in the body.
@@ -161,6 +159,10 @@ func (e *engine) handleDefine(f *frame, hash token.Token) {
 		}
 	}
 	if m.pattern != nil {
+		m.FlexiblePattern = m.Kind == MacroObjectLike && f.toks[patternStart].Kind == token.LParen
+		if m.FlexiblePattern {
+			m.Kind = MacroFunctionLike
+		}
 		m.pattern.spelling = string(f.source[nameTok.Start.Offset:end])
 		m.pattern.tokens = toPtoks(f.source, f.toks[patternStart:f.pos], f.fileIndex)
 		m.ParamSlots = make(map[int]int)
@@ -190,14 +192,26 @@ func (e *engine) handleDefine(f *frame, hash token.Token) {
 	}
 }
 
-func closingParenOnLine(f *frame) bool {
-	for i := f.pos; i < len(f.toks); i++ {
-		if f.toks[i].Kind == token.RParen {
+// A textual prefix can end in "(" or ",". Only consume a parenthesized
+// parameter list when the entire list has the conventional parameter syntax.
+func hasMacroParameterList(f *frame) bool {
+	wantParameter := true
+	for i := f.pos + 1; i < len(f.toks) && !endsLine(f.toks[i-1]); i++ {
+		switch f.toks[i].Kind {
+		case token.RParen:
 			return true
-		}
-		if endsLine(f.toks[i]) {
+		case token.Identifier, token.MacroParam:
+			if !wantParameter {
+				return false
+			}
+		case token.Comma:
+			if wantParameter {
+				return false
+			}
+		default:
 			return false
 		}
+		wantParameter = !wantParameter
 	}
 	return false
 }
@@ -275,7 +289,7 @@ func (e *engine) evaluateBranch(f *frame, hash token.Token, rest []token.Token, 
 	if !parentActive {
 		return false, false
 	}
-	v, ok := evalCondition(rest, f.source, e.macros)
+	v, ok := e.evalCondition(rest, f.source)
 	if !ok {
 		r := spanOf(hash, hash)
 		if len(rest) > 0 {
@@ -431,7 +445,7 @@ func (e *engine) handleAssert(f *frame, hash token.Token, lineEnded bool) {
 	if len(rest) > 0 {
 		r = spanOf(rest[0], rest[len(rest)-1])
 	}
-	v, ok := evalCondition(rest, f.source, e.macros)
+	v, ok := e.evalCondition(rest, f.source)
 	switch {
 	case !ok:
 		e.diag(f, CodeAssertUnknown, diagnostic.SeverityHint, "could not evaluate #assert condition", r)

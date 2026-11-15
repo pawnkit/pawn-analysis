@@ -766,6 +766,29 @@ func TestAnalyzeRebuildsExpandedViewWhenTriviaMovesTokens(t *testing.T) {
 	}
 }
 
+func TestAnalyzeInvalidatesCachedReturnTagWhenMacroChanges(t *testing.T) {
+	body := "HEADER:Value() { /* " + strings.Repeat("padding ", 20) +
+		" */ return bool:true; }\n"
+	before := []byte("#define HEADER:%0() stock bool:%0()\n" + body)
+	after := []byte("#define HEADER:%0() stock Float:%0()\n" + body)
+	opts := analysis.Options{Revision: "macro-tag", ReuseCompatibleExpansion: true}
+	opts.Previous = analysis.Analyze(before, opts)
+	if len(opts.Previous.Diagnostics) != 0 {
+		t.Fatalf("unexpected diagnostics before the macro edit: %+v", opts.Previous.Diagnostics)
+	}
+	result := analysis.Analyze(after, opts)
+	if result.Reuse.Tags != 0 {
+		t.Fatalf("reused %d tag checks after changing a declaration macro", result.Reuse.Tags)
+	}
+	for _, item := range result.Diagnostics {
+		if item.Code == "pawn-analysis:sema/tag-mismatch" &&
+			item.Message == "return value expects tag Float, got bool" {
+			return
+		}
+	}
+	t.Fatalf("missing diagnostic for the updated macro tag: %+v", result.Diagnostics)
+}
+
 func TestAnalyzeDoesNotReuseMalformedDeclarations(t *testing.T) {
 	before := analysis.Analyze([]byte("stock Keep() {}\n"), analysis.Options{})
 	after := analysis.Analyze([]byte("stock Broken( {\n"), analysis.Options{Previous: before})
@@ -932,6 +955,91 @@ func TestAnalyzeDoesNotRedeclareFunctionMacroInvocations(t *testing.T) {
 	}
 }
 
+func TestAnalyzeMacroRenamedVariableRedeclarations(t *testing.T) {
+	text := []byte(`#define Iterator:%0<%1> generated_%0[%1]
+new Iterator:first<2>, first[2];
+new second[2], Iterator:second<2>;
+new duplicate, duplicate;
+main() {}
+`)
+	result := analysis.Analyze(text, analysis.Options{})
+	var messages []string
+	for _, item := range result.Diagnostics {
+		if item.Code == "pawn-analysis:symbol/redeclared" {
+			messages = append(messages, item.Message)
+		}
+	}
+	if len(messages) != 1 || !strings.Contains(messages[0], "\"duplicate\"") {
+		t.Fatalf("redeclarations = %q, want only duplicate", messages)
+	}
+}
+
+func TestAnalyzeConditionalMacroPreservesReachableCode(t *testing.T) {
+	text := []byte(`#define GUARD%0->%1; new %1; CHECK(%0);
+#define CHECK(%0);%2else if (%0)
+#assert !(3 < 2 < 1)
+#assert 1 < 2 <= 2
+stock Work(value) {
+    GUARD value -> result; else return 0;
+    return result;
+    return 5;
+}
+main() { return Work(0); }
+`)
+	result := analysis.Analyze(text, analysis.Options{})
+	var unreachable []string
+	for _, item := range result.Diagnostics {
+		switch item.Code {
+		case "pawn-analysis:sema/unreachable":
+			unreachable = append(unreachable, string(text[item.Primary.Start:item.Primary.End]))
+		case "pawn-analysis:preprocess/assert-failed":
+			t.Fatalf("unexpected assertion failure: %+v", item)
+		}
+	}
+	if len(unreachable) != 1 || unreachable[0] != "return 5;" {
+		t.Fatalf("unreachable statements = %q, want only return 5;", unreachable)
+	}
+}
+
+func TestAnalyzeUsesRenamedMacroDeclarationReturnTag(t *testing.T) {
+	text := []byte(`#include <commands>
+native bool:SendMessage(playerid);
+COMMAND:one(playerid) { return SendMessage(playerid); }
+TYPED:two(playerid) { return SendMessage(playerid); }
+Float:plain(playerid) { return SendMessage(playerid); }
+main() {}
+`)
+	opts := analysis.Options{
+		Includes: preprocess.MapResolver{"commands": []byte(`
+#define DEFINE_COMMAND:%1(%2) forward cmd_%1(%2); public cmd_%1(%2)
+#define COMMAND:%1(%2) DEFINE_COMMAND:%1(%2)
+#define TYPED:%1(%2) stock Float:typed_%1(%2)
+`)},
+		SkipSemantics: true,
+	}
+	// Complete the tag pass without the full expanded syntax tree or symbol
+	// table. Only the two actual Float declarations should warn.
+	prepared := analysis.Analyze(text, opts)
+	result, err := analysis.CompleteContext(context.Background(), prepared, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mismatches []string
+	for _, item := range result.Diagnostics {
+		if item.Code == "pawn-analysis:sema/tag-mismatch" {
+			mismatches = append(mismatches, item.Message)
+		}
+	}
+	if len(mismatches) != 2 {
+		t.Fatalf("tag mismatches = %q, want one each for TYPED and plain", mismatches)
+	}
+	for _, message := range mismatches {
+		if message != "return value expects tag Float, got bool" {
+			t.Fatalf("unexpected tag mismatch: %s", message)
+		}
+	}
+}
+
 func TestAnalyzeLimitsExpandedOutput(t *testing.T) {
 	result := analysis.Analyze([]byte("main() { new values[] = { 1, 2, 3, 4, 5, 6, 7, 8, 9 }; }\n"), analysis.Options{MaxOutputTokens: 8})
 	for _, item := range result.Diagnostics {
@@ -1017,4 +1125,133 @@ func BenchmarkAnalyzeCancellation50K(b *testing.B) {
 		cancellationTotal += time.Since(time.Unix(0, cancelledAt.Load()))
 	}
 	b.ReportMetric(float64(cancellationTotal.Nanoseconds())/float64(b.N), "cancel-ns/op")
+}
+
+func TestIncludedMacroTagsPreserveCallableArity(t *testing.T) {
+	include := []byte(`#define TAG(%0) t_%0
+#define FONT: TAG(FONT):
+#define MODE: TAG(MODE):
+native One(FONT:value);
+native Two(Text:textid, FONT:font);
+native Optional(playerid, FONT:font, MODE:mode = MODE:0);
+native Variadic(FONT:font, ...);
+`)
+	for _, test := range []struct {
+		call string
+		want string
+	}{
+		{"One(0); Two(Text:0, 1); Optional(0, 1); Optional(0, 1, 2); Variadic(0, 1, 2);", ""},
+		{"One();", `"One" expects 1 arguments, got 0`},
+		{"Two(Text:0);", `"Two" expects 2 arguments, got 1`},
+		{"Two(Text:0, 1, 2);", `"Two" expects 2 arguments, got 3`},
+		{"Optional(0);", `"Optional" expects 2 to 3 arguments, got 1`},
+		{"Variadic();", `"Variadic" expects at least 1 arguments, got 0`},
+	} {
+		t.Run(test.call, func(t *testing.T) {
+			result := analysis.Analyze([]byte(fmt.Sprintf("#include <api>\nmain() { %s }", test.call)), analysis.Options{
+				Includes: preprocess.MapResolver{"api": include},
+			})
+			var messages []string
+			for _, item := range result.Diagnostics {
+				if item.Code == "pawn-analysis:sema/argument-count" {
+					messages = append(messages, item.Message)
+				}
+			}
+			if got := strings.Join(messages, "\n"); got != test.want {
+				t.Fatalf("argument-count diagnostics = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestMacroTaggedSignatureAfterIncrementalEdits(t *testing.T) {
+	include := []byte("#define TAG(%0) t_%0\n#define FONT: TAG(FONT):\nnative Two(Text:textid, FONT:font);\n")
+	var previous *analysis.Result
+	for _, call := range []string{"Two(Text:0, 1)", "Two(Text:0)", "Two(Text:0, 1)"} {
+		text := []byte("#include <api>\nmain() { " + call + "; }")
+		opts := analysis.Options{
+			URI: source.FileURI("main.pwn"), Includes: preprocess.MapResolver{"api": include},
+			Previous: previous, ReuseCompatibleExpansion: true,
+		}
+		incremental := analysis.Analyze(text, opts)
+		opts.Previous = nil
+		clean := analysis.Analyze(text, opts)
+		arity := func(result *analysis.Result) string {
+			var messages []string
+			for _, item := range result.Diagnostics {
+				if item.Code == "pawn-analysis:sema/argument-count" {
+					messages = append(messages, item.Message)
+				}
+			}
+			return strings.Join(messages, "\n")
+		}
+		want := ""
+		if call == "Two(Text:0)" {
+			want = `"Two" expects 2 arguments, got 1`
+		}
+		if got := arity(incremental); got != want || got != arity(clean) {
+			t.Fatalf("call %q: incremental=%q, clean=%q, want=%q", call, got, arity(clean), want)
+		}
+		previous = incremental
+	}
+}
+
+func TestCompilerAcceptedMacroDeclarations(t *testing.T) {
+	for _, test := range []struct {
+		name, source string
+	}{
+		{"callback", `#define Callback:%0(%1) forward %0(%1); public %0(%1)
+stock bool:Result() { return true; }
+Callback:Run() return Result();
+main() {}
+`},
+		{"command alias", `#define CMD:%1(%2) forward cmd_%1(%2); public cmd_%1(%2)
+#define Link:%1->%2; CMD:%1() return cmd_%2();
+CMD:flip() { return 1; }
+Link:fl->flip;
+main() {}
+`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			result := analysis.Analyze([]byte(test.source), analysis.Options{})
+			if len(result.Diagnostics) != 0 {
+				t.Fatalf("unexpected diagnostics: %+v", result.Diagnostics)
+			}
+		})
+	}
+}
+
+func TestMalformedMacroExpansionReportsInvocation(t *testing.T) {
+	const invocation = "Link:fl->flip;"
+	text := "#define Link:%1->%2; new = ;\n" + invocation + "\nmain() {}\n"
+	start := strings.Index(text, invocation)
+	result := analysis.Analyze([]byte(text), analysis.Options{})
+	for _, item := range result.Diagnostics {
+		if item.Source == "pawn-parser" && int(item.Primary.Start) == start &&
+			int(item.Primary.End) == start+len(invocation) {
+			if len(item.SafeFixes)+len(item.ReviewFixes) != 0 {
+				t.Fatal("suggested a source edit for a synthetic token")
+			}
+			return
+		}
+	}
+	t.Fatalf("missing expanded syntax diagnostic: %+v", result.Diagnostics)
+}
+
+func TestMacroAnalysisRetainsRealDiagnostics(t *testing.T) {
+	text := `#define Header:%0() forward Float:%0(); public Float:%0()
+stock bool:Value() { return true; }
+Header:Result() return Value();
+main() { new broken = ; }
+`
+	result := analysis.Analyze([]byte(text), analysis.Options{})
+	var syntaxError, tagError bool
+	for _, item := range result.Diagnostics {
+		syntaxError = syntaxError || (item.Source == "pawn-parser" &&
+			int(item.Primary.Start) >= strings.Index(text, "new broken"))
+		tagError = tagError || strings.Contains(item.Message, "return value expects tag Float, got bool")
+	}
+	if !syntaxError || !tagError {
+		t.Fatalf("missing genuine diagnostics: %+v", result.Diagnostics)
+	}
 }

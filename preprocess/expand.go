@@ -50,6 +50,10 @@ func (e *engine) appendOut(t ptok) {
 		})
 		return
 	}
+	if e.condition != nil {
+		e.condition.tokens = append(e.condition.tokens, t)
+		return
+	}
 	if len(e.expandedBuf) > 0 {
 		e.expandedBuf = append(e.expandedBuf, ' ')
 	}
@@ -114,12 +118,11 @@ func nestedInvocationSpan(start, end ptok) token.Span {
 
 func (e *engine) expandObjectAt(f *frame, tok token.Token, m Macro) {
 	inv := invocationSpan(f.fileIndex, tok, tok)
-	e.recordInvocation(inv)
 	body := make([]ptok, len(m.Body))
 	for i, bt := range m.Body {
 		body[i] = wrapOrigin(bt, inv, m.Name)
 	}
-	e.expandRun(f, body, hideSet{}.with(m.Name), 1)
+	e.expandInvocation(f, inv, body, m.Name)
 }
 
 func (e *engine) expandFunctionAt(f *frame, tok token.Token, m Macro) {
@@ -151,9 +154,8 @@ func (e *engine) expandFunctionAt(f *frame, tok token.Token, m Macro) {
 			"macro invocation argument count mismatch", spanOf(tok, closeParen))
 	}
 	inv := invocationSpan(f.fileIndex, tok, closeParen)
-	e.recordInvocation(inv)
 	body := substituteParams(m, args, inv)
-	e.expandRun(f, body, hideSet{}.with(m.Name), 1)
+	e.expandInvocation(f, inv, body, m.Name)
 }
 
 func (e *engine) recordInvocation(inv token.Span) {
@@ -245,7 +247,81 @@ func substituteParams(m Macro, args [][]ptok, inv token.Span) []ptok {
 	return out
 }
 
-func (e *engine) expandRun(f *frame, toks []ptok, hide hideSet, depth int) {
+func (e *engine) expandInvocation(f *frame, inv token.Span, toks []ptok, name string) {
+	index := len(e.invocations)
+	e.recordInvocation(inv)
+	start := len(e.expandedBuf)
+	sourcePos := f.pos
+	e.expandReplacement(f, toks, &expansionCursor{frame: f}, hideSet{}.with(name), 1)
+	if f.pos > sourcePos {
+		e.invocations[index].Range.End = f.toks[f.pos-1].End.Offset
+	}
+	if end := len(e.expandedBuf); end > start {
+		if start > 0 {
+			start++ // The first emitted token has a separating space.
+		}
+		e.invocations[index].Expansion = ByteRange{Start: start, End: end}
+	}
+}
+
+// A replacement may end in the prefix of another macro. Its lookahead can
+// continue into the enclosing replacement and then the unconsumed source.
+// A failed match does not advance any of those cursors.
+type expansionCursor struct {
+	tokens []ptok
+	pos    int
+	tail   *expansionCursor
+	frame  *frame
+}
+
+func (c *expansionCursor) peek(offset int, pattern bool) (ptok, bool) {
+	for c.frame == nil {
+		index := c.pos + offset
+		if index < len(c.tokens) {
+			if pattern && index > 0 && endsLine(c.tokens[index-1].Token) {
+				return ptok{}, false
+			}
+			return c.tokens[index], true
+		}
+		offset -= len(c.tokens) - c.pos
+		c = c.tail
+	}
+	f := c.frame
+	index := f.pos + offset
+	if index >= len(f.toks) || endsLine(f.toks[index-1]) {
+		return ptok{}, false
+	}
+	return toPtok(f.source, f.toks[index], f.fileIndex), true
+}
+
+func (c *expansionCursor) consume(count int) {
+	for c.frame == nil {
+		available := len(c.tokens) - c.pos
+		if count <= available {
+			c.pos += count
+			return
+		}
+		c.pos += available
+		count -= available
+		c = c.tail
+	}
+	for range count {
+		c.frame.advance()
+	}
+}
+
+func (e *engine) consumeNested(f *frame, cursor *expansionCursor, start, end ptok, count int) token.Span {
+	inv := nestedInvocationSpan(start, end)
+	before := f.pos
+	cursor.consume(count)
+	if f.pos > before {
+		inv.End = f.toks[f.pos-1].End
+		e.recordInvocation(inv)
+	}
+	return inv
+}
+
+func (e *engine) expandReplacement(f *frame, toks []ptok, tail *expansionCursor, hide hideSet, depth int) {
 	if depth > e.opts.MaxExpansionDepth {
 		e.truncated = true
 		if !e.depthLimitWarned {
@@ -262,30 +338,30 @@ func (e *engine) expandRun(f *frame, toks []ptok, hide hideSet, depth int) {
 		e.appendAllOut(toks)
 		return
 	}
-	i := 0
-	for i < len(toks) {
+	cursor := &expansionCursor{tokens: toks, tail: tail}
+	for cursor.pos < len(toks) {
 		if e.truncated || e.pollCancellation() {
 			break
 		}
-		t := toks[i]
+		t := toks[cursor.pos]
+		cursor.pos++
+		if e.condition != nil && e.condition.keepUnexpanded(t.Kind) {
+			e.appendOut(t)
+			continue
+		}
 		if t.Kind == token.Identifier && !hide[t.text] {
 			if m, ok := e.macros.lookup(t.text); ok {
 				if m.pattern != nil {
 					args, consumed, matched := matchPattern(m, func(index int) (ptok, bool) {
-						at := i + 1 + index
-						if at >= len(toks) || endsLine(toks[at-1].Token) {
-							return ptok{}, false
-						}
-						return toks[at], true
+						return cursor.peek(index, true)
 					}, e.pollCancellation)
 					if matched {
-						inv := nestedInvocationSpan(t, toks[i+consumed])
-						e.expandRun(f, substituteParams(m, args, inv), hide.with(m.Name), depth+1)
-						i += consumed + 1
+						last, _ := cursor.peek(consumed-1, true)
+						inv := e.consumeNested(f, cursor, t, last, consumed)
+						e.expandReplacement(f, substituteParams(m, args, inv), cursor, hide.with(m.Name), depth+1)
 						continue
 					}
 					e.appendOut(t)
-					i++
 					continue
 				}
 				switch m.Kind {
@@ -295,17 +371,16 @@ func (e *engine) expandRun(f *frame, toks []ptok, hide hideSet, depth int) {
 					for j, bt := range m.Body {
 						body[j] = wrapOrigin(bt, inv, m.Name)
 					}
-					e.expandRun(f, body, hide.with(m.Name), depth+1)
-					i++
+					e.expandReplacement(f, body, cursor, hide.with(m.Name), depth+1)
 					continue
 				case MacroFunctionLike:
-					if i+1 < len(toks) && toks[i+1].Kind == token.LParen {
-						args, endIdx, ok := collectArgsSlice(toks, i+2)
+					if next, ok := cursor.peek(0, false); ok && next.Kind == token.LParen {
+						args, consumed, ok := e.collectReplacementArgs(cursor)
 						if ok {
-							inv := nestedInvocationSpan(t, toks[endIdx-1])
+							last, _ := cursor.peek(consumed-1, false)
+							inv := e.consumeNested(f, cursor, t, last, consumed)
 							sub := substituteParams(m, args, inv)
-							e.expandRun(f, sub, hide.with(m.Name), depth+1)
-							i = endIdx
+							e.expandReplacement(f, sub, cursor, hide.with(m.Name), depth+1)
 							continue
 						}
 					}
@@ -313,25 +388,21 @@ func (e *engine) expandRun(f *frame, toks []ptok, hide hideSet, depth int) {
 			}
 		}
 		e.appendOut(t)
-		i++
 	}
 }
 
-// collectArgsSlice mirrors engine.collectArgs but operates over a detached
-// token slice (used when rescanning an already-substituted macro body)
-// rather than a live frame cursor.
-func collectArgsSlice(toks []ptok, start int) (args [][]ptok, next int, ok bool) {
-	i := start
-	if i >= len(toks) {
-		return nil, 0, false
-	}
-	if toks[i].Kind == token.RParen {
-		return nil, i + 1, true
+// collectReplacementArgs starts after the opening parenthesis at offset zero.
+func (e *engine) collectReplacementArgs(cursor *expansionCursor) (args [][]ptok, next int, ok bool) {
+	if first, ok := cursor.peek(1, false); ok && first.Kind == token.RParen {
+		return nil, 2, true
 	}
 	depth := 0
 	var current []ptok
-	for i < len(toks) {
-		t := toks[i]
+	for i := 1; !e.pollCancellation(); i++ {
+		t, ok := cursor.peek(i, false)
+		if !ok || t.Kind == token.EOF {
+			return nil, 0, false
+		}
 		switch t.Kind {
 		case token.LParen, token.LBracket, token.LBrace:
 			depth++
@@ -347,12 +418,10 @@ func collectArgsSlice(toks []ptok, start int) (args [][]ptok, next int, ok bool)
 			if depth == 0 {
 				args = append(args, current)
 				current = nil
-				i++
 				continue
 			}
 		}
 		current = append(current, t)
-		i++
 	}
 	return nil, 0, false
 }

@@ -84,8 +84,7 @@ func (e *engine) expandPatternAt(f *frame, name token.Token, m Macro) bool {
 		last = f.advance()
 	}
 	inv := invocationSpan(f.fileIndex, name, last)
-	e.recordInvocation(inv)
-	e.expandRun(f, substituteParams(m, args, inv), hideSet{}.with(m.Name), 1)
+	e.expandInvocation(f, inv, substituteParams(m, args, inv), m.Name)
 	return true
 }
 
